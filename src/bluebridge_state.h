@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define BLUEBRIDGE_VERSION "1.0.3-oled"
-#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=14"
+#define BLUEBRIDGE_VERSION "1.0.5-oled"
+#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=16"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
-#define BB_CONFIG_SCHEMA 14
+#define BB_CONFIG_SCHEMA 16
 #define BB_MAX_NAME 32
 #define BB_MAX_PROFILE_NAME 24
 #define BB_MAX_CONTROLLERS 8
@@ -33,6 +33,15 @@ typedef enum {
     BB_OUTPUT_SWITCH = 4,
     BB_OUTPUT_XBOX360 = 5
 } bb_output_mode_t;
+
+typedef enum { BB_PANEL_NONE=0, BB_PANEL_ENCODER=1, BB_PANEL_TRACKBALL=2 } bb_panel_input_t;
+bb_panel_input_t bb_panel_input_get(void);
+bb_panel_input_t bb_panel_input_current(void);
+bool bb_panel_input_set(bb_panel_input_t input);
+bool bb_panel_settings_set(bb_panel_input_t input, bool oled_enabled);
+bool bb_oled_enabled_get(void);
+bool bb_oled_enabled_current(void);
+const char* bb_panel_input_name(bb_panel_input_t input);
 
 typedef struct __attribute__((packed)) {
     int8_t x;
@@ -109,8 +118,12 @@ typedef struct __attribute__((packed)) {
     /* Appended to preserve the schema 8-13 binary layout. Bit 7 enables
        PEW PEW; bits 0-4 select a canonical input button (0 = South). */
     uint8_t oled_pew[BB_MAX_CONTROLLERS][BB_MAX_PROFILES];
+    uint8_t panel_input;
+    uint8_t oled_enabled;
 } bb_config_t;
 
+#define BB_CONFIG_V15_SIZE offsetof(bb_config_t, oled_enabled)
+#define BB_CONFIG_V14_SIZE offsetof(bb_config_t, panel_input)
 #define BB_CONFIG_V13_SIZE offsetof(bb_config_t, oled_pew)
 #define BB_CONFIG_V12_SIZE offsetof(bb_config_t, blocked_device_count)
 #define BB_CONFIG_V11_SIZE offsetof(bb_config_t, multi_controller)

@@ -15,8 +15,29 @@ OLED-only **PEW PEW** animation. See
 [OLED wiring, configuration and build instructions](docs/OLED.md).
 The companion applications are separate projects; a local USB configuration
 page for the animation checkbox is included in `tools/oled-config.html`.
-Trackball control is proposed but not implemented. Firmware builds and automated
-tests pass; physical wiring and controller-latency validation remain outstanding.
+The included web GUI turns the **OLED on/off** independently and selects **None**, **Rotary encoder**, or **Pimoroni PIM447
+trackball** as the adapter's saved physical control. One firmware supports all
+three choices. Trackball support is implemented and tested in simulation;
+physical wiring and controller-latency validation remain outstanding.
+
+### Screenshots and demonstrations
+
+The images below are simulated frames from the firmware renderer, not hardware
+photographs. The web screenshot uses an explicitly simulated USB adapter.
+
+![Controller layouts with turbo rings](docs/images/controller-layouts.png)
+
+| Live input demonstration | Optional PEW effect |
+| --- | --- |
+| ![Button, D-pad, stick and trigger highlights](docs/images/live-input-demo.gif) | ![Three PEW bursts and return to the controller screen](docs/images/pew-demo.gif) |
+
+![Web configuration with independent OLED and control selection](docs/images/web-config.png)
+
+[Interactive configuration demo](docs/demos/oled-config-demo.html) (serve locally;
+uses a simulated adapter) · [Preview firmware and release notes](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.0.5-oled-preview)
+
+The preview firmware is for Pico 2 W. It is build/test validated and awaits
+physical flashing, PIM447/encoder/OLED checks and latency testing.
 
 ## Features
 

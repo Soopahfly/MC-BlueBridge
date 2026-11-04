@@ -6,6 +6,44 @@ screen shows the selected controller/profile, turbo configuration and battery
 percentage where available, without fixed branding, USB mode or a routine
 Connected label. Text uses a compact uppercase ASCII font.
 
+## Screenshots and demonstrations
+
+These are software-generated examples, not photographs of a flashed adapter.
+OLED pixels come from the same C renderer compiled into the firmware. The web
+configuration screenshot and interactive demo use a simulated USB adapter.
+
+![Controller-family layouts](images/controller-layouts.png)
+
+![Live button, direction, stick and trigger demonstration](images/live-input-demo.gif)
+
+![Optional three-word PEW animation](images/pew-demo.gif)
+
+![Web GUI with independent OLED enable and physical-control selector](images/web-config.png)
+
+To try the web GUI without hardware, run this from the repository root:
+
+```sh
+python -m http.server 8765 --bind 127.0.0.1 --directory docs/demos
+```
+
+Open `http://localhost:8765/oled-config-demo.html`. It never connects to real
+USB hardware, starts with a simulated trackball and DualSense, and lets you
+change settings/reconnect after a simulated restart.
+
+To regenerate the assets, install Pillow and run:
+
+```sh
+python tools/render_demos.py
+node tools/render_web_demo.mjs
+```
+
+The Python script uses CC/gcc and the firmware C renderer. The web demo is a
+generated copy of the real config page with a mock transport. Its screenshot
+can be recaptured using a headless browser after the simulated connection loads.
+The preview UF2 and checksum are attached to the
+[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.0.5-oled-preview).
+See [release notes and pending hardware checks](RELEASE_NOTES-1.0.5-oled-preview.md).
+
 ## Live controller screen
 
 The input display follows the behavior of
@@ -79,16 +117,102 @@ Push-switch terminal 2 --- GND
 A bare encoder has no VCC connection. Terminal order varies: identify A/B/common
 and the two switch terminals from the particular encoder's datasheet.
 
-## Trackball alternative (planned)
+## Choose OLED and controls in the web GUI
 
-A Pimoroni PIM447 I2C trackball with RGBW illumination was discussed as an
-alternative to the encoder. **No trackball input or LED-control driver is present
-in the current firmware.** The encoder remains the supported physical control.
-The proposed trackball connection is a separate I2C1 bus on GP2/GP3, sharing
-3.3 V and GND; it is a future wiring plan, not a tested configuration. Raw
-direction-output trackball boards require a different driver from the Pimoroni
-I2C module. Navigation sensitivity, click/hold handling, I2C transactions and
-LED status behavior still need implementation and hardware validation.
+The same panel-enabled firmware includes **None**, **Rotary encoder** and
+**Pimoroni PIM447 trackball**. There is no separate trackball firmware selection
+or compile-time input-mode switch.
+
+1. Serve `tools/oled-config.html` locally as described under PEW PEW below.
+2. Open the page in desktop Chrome/Edge and connect to the adapter over USB.
+3. Under **Adapter controls**, set **Enable OLED display** and choose **Physical menu control**.
+4. Click **Save and restart**. The setting is stored on the adapter, then the
+   adapter restarts if the active selection changed. Reconnect from the page.
+
+This choice is global to the adapter, independent of controller profiles, and
+can be configured before any Bluetooth controller is paired. OLED on/off and
+physical control choice are independent. **None** leaves both encoder and
+trackball inputs uninitialized; the OLED continues working if enabled. It does
+not disable controller input, USB management, or the optional OLED animation.
+Only the selected physical control is initialized after restart. OLED off sends
+one SSD1306 display-off command to blank any retained image, then stops all
+display transfers and rendering. Encoder/trackball selection and USB
+configuration remain available independently. An absent display is handled by
+the existing NACK/timeout path.
+
+Fresh configurations default to OLED on and control None. Older configurations
+keep OLED on during migration. Upgrades/imports from schema 7-14 preserve
+Encoder as the default to match the previous firmware. There is no automatic
+fallback to another input if the selected hardware is absent. You can always
+change the selection over USB in a USB mode exposing the management interface.
+
+## Pimoroni PIM447 trackball
+
+The implemented driver targets the **Pimoroni PIM447 I2C RGBW Trackball Breakout**,
+not bare direction-output BlackBerry trackball boards. The register map and
+20 ms register-pointer/read spacing follow Pimoroni's official
+[Python driver](https://github.com/pimoroni/trackball-python) and
+[Pico library](https://github.com/pimoroni/pimoroni-pico/tree/main/drivers/trackball).
+This project uses its own non-blocking C implementation, not those libraries.
+
+Default wiring uses a dedicated **I2C1 bus at 100 kHz**, separate from the OLED:
+
+| PIM447 connection | Pico GPIO / supply | Physical Pico pin |
+| --- | --- | --- |
+| VCC / 3-5V | 3V3 OUT | 36 |
+| GND | GND | 38 (or another GND) |
+| SDA | GP2 (I2C1 SDA) | 4 |
+| SCL | GP3 (I2C1 SCL) | 5 |
+
+The OLED remains on GP4/GP5. Use 3.3 V with the Pico. Four wires are sufficient;
+the trackball INT connection is not used. The default device address is 0x0a;
+0x0b is supported through the build option for boards configured to that address.
+The driver checks chip ID 0xba11 before accepting input or writing LEDs.
+
+- Roll up/down to browse menu items.
+- Roll left/right to adjust a selected value.
+- Roll in either axis from the normal screen to open the menu.
+- Click to select/apply; hold for 0.8 seconds to cancel/back.
+- Click-induced movement is suppressed. A minimum motion threshold, dominant-axis
+  filter, 80 ms step spacing and three-step burst cap limit accidental changes.
+- Register switch-change counts catch short taps completed between reads.
+
+LED feedback is low brightness and changes only when needed:
+
+| State | Illumination |
+| --- | --- |
+| Waiting for controller | Amber |
+| Controller connected | Green |
+| Pairing | Blue |
+| Menu open | Purple |
+| Editing a setting | White |
+| PEW animation | Red briefly |
+
+I2C reads/writes are serviced in bounded FIFO steps on core 1 without blocking
+on clock stretching. Input sampling uses a 20 ms pointer/read gap and a short
+interval before the next sample. A NACK, wrong chip ID, or 100 ms without progress
+disables trackball input for that boot. Loss while held does not synthesize an
+Apply click. Fix wiring and power-cycle, or select a different input in the GUI.
+A failed I2C connection cannot reliably update the trackball's LED state.
+
+Optional build-time wiring/sensitivity overrides (the input type is still chosen
+in the GUI):
+
+```text
+BB_TRACKBALL_I2C=1
+BB_TRACKBALL_SDA=2
+BB_TRACKBALL_SCL=3
+BB_TRACKBALL_ADDRESS=0x0a
+BB_TRACKBALL_COUNTS_PER_STEP=3
+BB_TRACKBALL_INVERT_X=OFF
+BB_TRACKBALL_INVERT_Y=OFF
+```
+
+Counts per step accepts 1-32. Increase it if navigation is too sensitive. X/Y
+inversion supports reversing the mounted orientation; axis swapping is not
+implemented. These wiring/sensitivity overrides are not web-GUI settings.
+**The trackball implementation has automated tests and compiles, but has not
+been validated with a physical PIM447 or for controller-latency impact.**
 
 ## Navigation
 
@@ -206,9 +330,9 @@ the corresponding `build-no-oled` build. Extra options can be supplied through
 
 PEW settings persist per profile. The Live Controller/Status screen selection is
 currently session-only and resets to Live Controller after restarting. The old
-firmware cannot read schema 14; keep your pre-upgrade export if you intend to
-return to it. Trackball hardware does not replace the encoder without a future
-firmware update.
+firmware cannot read schema 16; keep your pre-upgrade export if you intend to
+return to it. To use a trackball instead of the encoder, choose Trackball under Adapter
+controls in the local web GUI and save/restart.
 
 ## Management protocol and persistence
 
@@ -224,13 +348,39 @@ BB1|request-id|OK|saved
 The command acts on the selected management controller. Invalid indices,
 boolean values and button numbers are rejected.
 
-Configuration schema **14** appends a 64-byte per-controller/profile setting
-table to schema 13, preserving the old profile/controller binary layout. Existing
-schema 7-13 flash records migrate, and schema 8-13 exports remain importable.
-Old profiles start with the animation disabled. Duplicating copies the setting;
-deleting profiles/controllers shifts it with its owner, and new slots start off.
-Current configuration payload size is 11,044 bytes, within the reserved 16 KiB.
-Export a backup before flashing; older firmware will not understand schema 14.
+Configuration schema **16** appends one OLED-enable byte to schema 15.
+Schema 15 appended one adapter-control selection byte to schema 14. Schema 14 already appended the 64-byte per-controller/profile PEW
+table to schema 13, preserving the original profile/controller binary layout.
+Schema 7-15 flash records migrate; schema 8-15 exports remain importable.
+Schema-14 PEW settings survive migration. Older animation-less profiles start
+with the effect disabled. Duplicating copies it; deleting profiles/controllers
+shifts it with its owner, and new profile slots start off.
+The current payload is 11,046 bytes, within the reserved 16 KiB. Export a backup
+before flashing; earlier firmware will not understand schema 16.
+
+`HELLO` also advertises `panel_configuration: true` and `oled_toggle: true`. The adapter-level commands
+are independent of controller selection:
+
+```text
+BB1|request-id|PANEL_GET
+BB1|request-id|OK|{"input":"trackball","active_input":"trackball","restart_required":false,"panel_compiled":true,"oled_enabled":true,"active_oled_enabled":true,"trackball_ready":true}
+BB1|request-id|PANEL_SET|none
+BB1|request-id|PANEL_SET|encoder
+BB1|request-id|PANEL_SET|trackball
+BB1|request-id|PANEL_SET|trackball|0
+BB1|request-id|PANEL_SET|none|1
+```
+
+`PANEL_SET` replies with JSON containing `input` and `restart_required`. Unsupported
+names, invalid OLED booleans and extra fields are rejected before changes.
+An optional final `0`/`1` field sets OLED off/on atomically with the input choice;
+omitting it preserves the current saved OLED preference for older clients.
+Changed settings are persisted and restart the adapter. Reapplying active
+settings needs no restart. `panel_compiled` reports build support separately
+from the saved `oled_enabled` and boot-time `active_oled_enabled` values. A firmware built
+with `BB_ENABLE_OLED=OFF` only accepts None with the display off. The separate Companion website/app
+would need to implement these commands to expose the selector; the included
+local web page already provides it.
 
 ## Runtime overhead and failure handling
 
@@ -251,11 +401,10 @@ Export a backup before flashing; older firmware will not understand schema 14.
   wiring. Encoder operation remains independent of display detection.
 - Bluetooth callbacks never draw or perform I2C transfers.
 
-In the validated Release builds with the live renderer, enabling the panel adds
-21,192 bytes of code/read-only data and 4,008 bytes of static RAM versus the same
-fork built with `BB_ENABLE_OLED=OFF`. Compare `arm-none-eabi-size` output when
-changing build settings; these figures exclude transient stack use and are not
-a latency measurement.
+The panel-enabled firmware includes the OLED renderer, encoder and trackball
+code, while initializing only the selected input. Compare
+`arm-none-eabi-size` for enabled/disabled builds when assessing memory overhead;
+these figures exclude transient stack use and are not latency measurements.
 
 ## Validation and hardware bring-up
 
@@ -273,7 +422,13 @@ turbo rings, stick/D-pad/trigger changes, remapped turbo rings, and the real inp
 pipeline's modifier-selected turbo assignments. Renderer tests write sample
 128x64 monochrome PBM frames under `build-host/` for inspection.
 The JavaScript test exercises the actual checkbox page with simulated Web Serial,
-including split replies, saved values and stale-profile protection.
+including split replies, saved values, stale-profile protection, all three
+physical-control selections, OLED on/off, reconnect after restart and setup
+before pairing. Native display tests verify one display-off command followed
+by no further screen traffic.
+Trackball tests cover motion thresholds/inversion/jitter/rate limiting, register
+read timing, chip identity, short/held clicks, LED caching, device loss, NACK and
+timeouts, plus shared menu interaction.
 
 Builds and simulations do **not** validate physical wiring or controller latency.
 On hardware, first verify the status screen and encoder direction, then mode

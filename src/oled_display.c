@@ -12,6 +12,7 @@ static unsigned length, offset, next_page;
 static int inflight_page = -1;
 static uint32_t started;
 static bool available, busy, initializing;
+static bool shutting_down;
 static bool valid[8];
 static char previous[8][22];
 static int pew_frame = -1;
@@ -123,6 +124,8 @@ static void start(unsigned size, uint32_t now) {
 }
 
 void bb_oled_init(void) {
+    shutting_down=false;
+    inflight_page=-1;
     i2c_init(bus(), 400000);
     gpio_set_function(BB_OLED_SDA, GPIO_FUNC_I2C);
     gpio_set_function(BB_OLED_SCL, GPIO_FUNC_I2C);
@@ -141,6 +144,15 @@ void bb_oled_init(void) {
     available = true;
     initializing = true;
     start(sizeof(init), 0);
+}
+
+void bb_oled_init_off(void) {
+    /* A watchdog restart leaves the OLED powered: explicitly blank it once,
+     * then stop all further transfers. Reuse bus setup without sending init. */
+    bb_oled_init();
+    shutting_down=true;
+    packet[0]=0;packet[1]=0xae;
+    start(2,0);
 }
 
 bool bb_oled_available(void) { return available; }
@@ -176,6 +188,7 @@ void bb_oled_poll(uint32_t now) {
         }
         (void)hw->clr_stop_det;
         busy = false;
+        if(shutting_down){hw->enable=0;available=false;initializing=false;return;}
         if (inflight_page >= 0) {
             memcpy(sent + inflight_page * 128, packet + 7, 128);
             valid[inflight_page] = true;

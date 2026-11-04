@@ -2,6 +2,9 @@
 #if BB_ENABLE_OLED
 #include "oled_display.h"
 #include "panel_controls.h"
+#if BB_USE_TRACKBALL
+#include "trackball.h"
+#endif
 #include "bluebridge_state.h"
 #include "bluebridge_platform.h"
 #include "controller_input.h"
@@ -21,9 +24,14 @@ static const char* const titles[] = {"USB MODE", "CONTROLLER", "PROFILE", "TURBO
     "TURBO RATE", "TURBO CONTROL", "TURBO BUTTON", "TURBO OUTPUT", "PEW PEW",
     "FIRE BUTTON", "PAIRING", "CONTROLLER MODE", "DISPLAY SCREEN", "BACK"};
 static const char* const turbo_modes[] = {"MODIFIER", "TOGGLE", "HOLD"};
+#if BB_USE_ENCODER
 static bb_encoder_t encoder;
 static volatile int movement;
 static bb_panel_button_t button;
+#endif
+#if BB_USE_TRACKBALL
+static bb_panel_button_t trackball_button;
+#endif
 static bb_controller_t controller;
 static bb_runtime_state_t runtime;
 static char rows[8][22];
@@ -39,6 +47,7 @@ static bool initialized;
 static bool live_screen = true;
 static uint32_t last_live_frame;
 
+#if BB_USE_ENCODER
 static uint8_t encoder_pins(void) {
     return (uint8_t)((gpio_get(BB_ENCODER_A) ? 2 : 0) | (gpio_get(BB_ENCODER_B) ? 1 : 0));
 }
@@ -48,6 +57,7 @@ static void encoder_irq(uint gpio, uint32_t events) {
     int next = movement + step;
     if (next >= -32 && next <= 32) movement = next;
 }
+#endif
 static void snapshot(void) {
     bb_active_controller_get(&controller, NULL);
     bb_state_get(&runtime);
@@ -174,6 +184,7 @@ static void value_text(unsigned choice, int v, char* out, size_t size) {
     }
 }
 static void draw(uint32_t now) {
+    if(!bb_oled_enabled_current())return;
     if (!menu && pew_active) {
         bb_oled_pew((uint8_t)((uint32_t)(now-pew_at)/100u));
         return;
@@ -221,7 +232,7 @@ static void draw(uint32_t now) {
         if (bb_multi_mode()) snprintf(rows[4],22,"DUAL MODE - NO TURBO");
         else snprintf(rows[4],22,"TURBO: %s %u HZ",profile()->turbo_enabled ? "ON" : "OFF",profile()->turbo_rate_hz);
         if (runtime.battery_supported) snprintf(rows[6],22,"BATTERY: %u%%",runtime.battery_percent);
-        snprintf(rows[7],22,"PRESS KNOB FOR MENU");
+        snprintf(rows[7],22,"PRESS FOR MENU");
     } else if (editing) {
         snprintf(rows[0],22,"SETTINGS");
         snprintf(rows[2],22,"%s",titles[item]);
@@ -239,12 +250,19 @@ static void draw(uint32_t now) {
 }
 
 void bb_panel_init(void) {
-    bb_oled_init();
+    if(bb_oled_enabled_current())bb_oled_init();else bb_oled_init_off();
+#if BB_USE_ENCODER
+    if(bb_panel_input_current()==BB_PANEL_ENCODER){
     const uint pins[] = {BB_ENCODER_A,BB_ENCODER_B,BB_ENCODER_SW};
     for (unsigned i=0;i<3;++i) { gpio_init(pins[i]); gpio_set_dir(pins[i],GPIO_IN); gpio_pull_up(pins[i]); }
     encoder.previous = encoder_pins();
     gpio_set_irq_enabled_with_callback(BB_ENCODER_A,GPIO_IRQ_EDGE_RISE|GPIO_IRQ_EDGE_FALL,true,encoder_irq);
     gpio_set_irq_enabled(BB_ENCODER_B,GPIO_IRQ_EDGE_RISE|GPIO_IRQ_EDGE_FALL,true);
+    }
+#endif
+#if BB_USE_TRACKBALL
+    if(bb_panel_input_current()==BB_PANEL_TRACKBALL)bb_trackball_init();
+#endif
     initialized = true;
     snapshot();
     for (unsigned s=0;s<BB_MAX_SLOTS;++s) { bb_runtime_state_t r; bb_state_get_slot(s,&r); seen_pew[s]=r.pew_events; }
@@ -254,11 +272,41 @@ void bb_panel_poll(void) {
     if (!initialized) return;
     uint32_t now = to_ms_since_boot(get_absolute_time());
     bb_oled_poll(now);
+    int delta=0,press=0;
+#if BB_USE_ENCODER
+    if(bb_panel_input_current()==BB_PANEL_ENCODER){
     uint32_t saved = save_and_disable_interrupts();
-    int delta = movement;
+    delta = movement;
     movement = 0;
     restore_interrupts(saved);
-    int press = bb_panel_button_update(&button,!gpio_get(BB_ENCODER_SW),now);
+    press = bb_panel_button_update(&button,!gpio_get(BB_ENCODER_SW),now);
+    }
+#endif
+#if BB_USE_TRACKBALL
+    if(bb_panel_input_current()==BB_PANEL_TRACKBALL){
+    /* Colour requests are cached by the driver; unchanged LEDs are not written. */
+    if(pew_active)bb_trackball_colour(32,0,0,0);
+    else if(editing)bb_trackball_colour(0,0,0,20);
+    else if(menu)bb_trackball_colour(16,0,16,0);
+    else if(runtime.pairing)bb_trackball_colour(0,0,32,0);
+    else if(runtime.controller_connected)bb_trackball_colour(0,24,0,0);
+    else bb_trackball_colour(24,6,0,0);
+    bb_trackball_poll(now);
+    if(bb_trackball_available()) {
+        bb_trackball_event_t event;
+        bb_trackball_take(&event);
+        int click=bb_panel_button_update(&trackball_button,event.down,now);
+        if(event.clicks&&!trackball_button.stable&&!trackball_button.observed)click=1;
+        if(click>press)press=click;
+        /* A click never also changes the currently selected value. */
+        if(!event.down&&!click)delta+=editing?event.x:event.y;
+        if(!menu&&!event.down&&!click&&event.x)delta+=event.x;
+    } else {
+        /* Loss of the device while held must not synthesize an Apply click. */
+        trackball_button=(bb_panel_button_t){0};
+    }
+    }
+#endif
     bool refresh = delta || press || (uint32_t)(now-last_snapshot) >= 20u;
     if (!refresh) return;
     last_snapshot = now;
@@ -276,7 +324,7 @@ void bb_panel_poll(void) {
         bb_state_get_slot(s,&r);
         if (r.pew_events != seen_pew[s]) {
             seen_pew[s]=r.pew_events;
-            if (r.controller_index == runtime.controller_index && !menu && !pew_active &&
+            if (bb_oled_enabled_current() && r.controller_index == runtime.controller_index && !menu && !pew_active &&
                 (!have_pew || (uint32_t)(now-last_pew)>=750u)) {
                 pew_active=true; have_pew=true; pew_at=last_pew=now;
             }
@@ -285,7 +333,15 @@ void bb_panel_poll(void) {
     if (pew_active && (menu || (uint32_t)(now-pew_at)>=400u || !(effect&0x80u) || !runtime.controller_connected)) pew_active=false;
     draw(now); /* Text/glyph and page comparisons suppress all unchanged traffic. */
 }
+bool bb_panel_trackball_ready(void){
+#if BB_USE_TRACKBALL
+    return bb_panel_input_current()==BB_PANEL_TRACKBALL&&bb_trackball_available();
+#else
+    return false;
+#endif
+}
 #else
 void bb_panel_init(void) {}
 void bb_panel_poll(void) {}
+bool bb_panel_trackball_ready(void){return false;}
 #endif

@@ -21,6 +21,9 @@ for name, sources in {
     "panel": ["tests/test_panel.c", "src/panel_controls.c", "src/oled_gamepad.c", "src/bluebridge_state.c", "src/config_store.c"],
     "gamepad": ["tests/test_gamepad.c", "src/oled_gamepad.c"],
     "turbo-display": ["tests/test_turbo_display.c", "src/controller_input.c", "src/bluebridge_state.c", "src/config_store.c"],
+    "trackball-motion": ["tests/test_trackball_motion.c", "src/trackball_motion.c"],
+    "trackball": ["tests/test_trackball.c", "src/trackball_motion.c"],
+    "trackball-panel": ["tests/test_trackball_panel.c", "src/panel_controls.c", "src/oled_gamepad.c", "src/bluebridge_state.c", "src/config_store.c"],
 }.items():
     exe = out / (name + (".exe" if os.name == "nt" else ""))
     subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-Itests/stubs", "-Isrc",

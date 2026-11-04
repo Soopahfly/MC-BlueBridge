@@ -14,8 +14,10 @@ bool test_gpio[30];
 uint8_t test_flash[PICO_FLASH_SIZE_BYTES];
 static unsigned reenumerations;
 static unsigned pew_draws;
+static unsigned off_requests;
 static uint8_t picture[1024];
 void bb_oled_init(void) {}
+void bb_oled_init_off(void) { ++off_requests; }
 void bb_oled_poll(uint32_t now) { (void)now; }
 bool bb_oled_available(void) { return true; }
 void bb_oled_text(const char lines[8][22]) { (void)lines; }
@@ -88,5 +90,9 @@ int main(void) {
     editing=false; item=USB_MODE; begin_edit(); assert(!editing);
     item=TURBO; begin_edit(); assert(!editing);
     item=PEW; begin_edit(); assert(editing); /* Cosmetic setting remains available. */
+    assert(bb_panel_settings_set(bb_panel_input_get(),false));bb_config_flush_pending();bb_state_init();
+    bb_panel_init();assert(off_requests==1);
+    unsigned old_pew=pew_draws;tick();assert(pew_draws==old_pew);
     puts("panel: mode confirmation, turbo settings, profile edits, PEW timing and multi-mode restrictions passed");
+    return 0;
 }

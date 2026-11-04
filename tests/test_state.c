@@ -16,6 +16,8 @@ static uint32_t events(void) { bb_runtime_state_t r; bb_state_get(&r); return r.
 int main(void) {
     memset(test_flash,255,sizeof(test_flash));
     bb_state_init();
+    assert(bb_panel_input_get()==BB_PANEL_NONE&&bb_panel_input_current()==BB_PANEL_NONE);
+    assert(!bb_panel_input_set((bb_panel_input_t)3));
     const uint8_t a[6]={1,2,3,4,5,6}, b[6]={2,3,4,5,6,7};
     uint8_t ci,pi;
     assert(bb_controller_activate_or_create(a,0x054c,0x0ce6,"DualSense",&ci));
@@ -69,7 +71,8 @@ int main(void) {
     for(unsigned c=0;c<BB_MAX_CONTROLLERS;++c)
         for(unsigned p=0;p<BB_MAX_PROFILES;++p) assert(loaded.oled_pew[c][p]==0);
     bb_state_init(); bb_config_get(&loaded);
-    assert(loaded.schema==14 && loaded.controllers[0].native_product_id==2);
+    assert(loaded.schema==16 && loaded.controllers[0].native_product_id==2);
+    assert(bb_panel_input_get()==BB_PANEL_ENCODER); /* Existing installations keep encoder behavior. */
     assert(bb_profile_oled_get(0)==0);
     /* Old exports are padded by the CDC importer before validation. */
     loaded.schema=13; loaded.oled_pew[0][0]=0x80;
@@ -79,5 +82,30 @@ int main(void) {
     assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
     test_flash[base+sizeof(header)+10]^=1;
     assert(!bb_config_load(&loaded)); /* Corruption rejected. */
+    bb_config_get(&loaded);loaded.schema=14;loaded.oled_pew[0][0]=0x84;
+    uint32_t v14_header[]={0x42424733u,BB_CONFIG_V14_SIZE,hash(&loaded,BB_CONFIG_V14_SIZE)};
+    memcpy(test_flash+base,v14_header,sizeof(v14_header));
+    memcpy(test_flash+base+sizeof(v14_header),&loaded,BB_CONFIG_V14_SIZE);
+    bb_state_init();assert(bb_panel_input_current()==BB_PANEL_ENCODER);
+    assert(bb_profile_oled_get(0)==0x84); /* Schema-14 PEW settings survive. */
+    assert(bb_panel_input_set(BB_PANEL_TRACKBALL));
+    assert(bb_panel_input_get()==BB_PANEL_TRACKBALL&&bb_panel_input_current()==BB_PANEL_ENCODER);
+    assert(bb_mode_restart_pending());bb_config_flush_pending();bb_state_init();
+    assert(bb_panel_input_current()==BB_PANEL_TRACKBALL);
+    assert(bb_panel_input_set(BB_PANEL_NONE));bb_config_flush_pending();bb_state_init();
+    assert(bb_panel_input_current()==BB_PANEL_NONE);
+    bb_config_get(&loaded);loaded.panel_input=3;
+    assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    assert(bb_oled_enabled_get()&&bb_oled_enabled_current());
+    assert(bb_panel_settings_set(BB_PANEL_NONE,false));
+    assert(!bb_oled_enabled_get()&&bb_oled_enabled_current());
+    bb_config_flush_pending();bb_state_init();assert(!bb_oled_enabled_current());
+    bb_config_get(&loaded);loaded.oled_enabled=2;
+    assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    loaded.oled_enabled=0;loaded.schema=15;loaded.panel_input=BB_PANEL_TRACKBALL;
+    uint32_t v15_header[]={0x42424733u,BB_CONFIG_V15_SIZE,hash(&loaded,BB_CONFIG_V15_SIZE)};
+    memcpy(test_flash+base,v15_header,sizeof(v15_header));
+    memcpy(test_flash+base+sizeof(v15_header),&loaded,BB_CONFIG_V15_SIZE);
+    bb_state_init();assert(bb_oled_enabled_current()&&bb_panel_input_current()==BB_PANEL_TRACKBALL);
     printf("state: edge events, profile lifecycle, flash round-trip and schema migration passed (%zu bytes)\n",sizeof(cfg));
 }

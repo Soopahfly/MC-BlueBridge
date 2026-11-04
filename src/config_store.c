@@ -95,6 +95,8 @@ static uint32_t checksum_bytes(const void* data, size_t size) {
 static void migrate_v7(const legacy_config_v7_t* old, bb_config_t* cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->schema = BB_CONFIG_SCHEMA;
+    cfg->panel_input=BB_PANEL_ENCODER;
+    cfg->oled_enabled=1;
     cfg->output_mode = old->output_mode;
     cfg->controller_count = old->controller_count > BB_MAX_CONTROLLERS ? BB_MAX_CONTROLLERS : old->controller_count;
     cfg->active_controller = old->active_controller;
@@ -156,6 +158,16 @@ bool bb_config_load(bb_config_t* cfg) {
         if (header->checksum != checksum_bytes(stored, sizeof(*stored))) return false;
         *cfg = *stored;
         return true;
+    }
+    if(header->size==BB_CONFIG_V14_SIZE){
+        uint32_t schema;memcpy(&schema,payload,sizeof(schema));
+        if(schema!=14||header->checksum!=checksum_bytes(payload,header->size))return false;
+        memset(cfg,0,sizeof(*cfg));memcpy(cfg,payload,header->size);return true;
+    }
+    if(header->size==BB_CONFIG_V15_SIZE){
+        uint32_t schema;memcpy(&schema,payload,sizeof(schema));
+        if(schema!=15||header->checksum!=checksum_bytes(payload,header->size))return false;
+        memset(cfg,0,sizeof(*cfg));memcpy(cfg,payload,header->size);return true;
     }
     if (header->size == BB_CONFIG_V13_SIZE) {
         uint32_t schema;

@@ -88,5 +88,11 @@ int main(void) {
     bb_oled_init(); bb_oled_poll(clock_ms++);
     clock_ms+=101; bb_oled_poll(clock_ms++);
     assert(!available && !busy); /* Stuck bus times out without blocking. */
+    test_i2c[0].hw.raw_intr_stat=0;test_i2c[0].hw.status=I2C_IC_STATUS_TFNF_BITS;
+    bb_oled_init_off();assert(length==2&&packet[0]==0&&packet[1]==0xae);
+    unsigned old_transactions=transactions;settle();
+    assert(transactions==old_transactions+1&&!available&&!busy);
+    for(unsigned n=0;n<1000;n++)bb_oled_poll(clock_ms++);
+    assert(transactions==old_transactions+1); /* Exactly one off command, then zero traffic. */
     puts("oled: idle suppression, changed pages, in-flight updates, NACK and timeout passed");
 }

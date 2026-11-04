@@ -8,7 +8,10 @@ class Element {
   value=''; options=[]; checked=false; disabled=false; textContent='';
   replaceChildren(...options) { this.options=options; this.value=options[0]?.value ?? ''; }
 }
-const elements=Object.fromEntries(['connect','refresh','settings','controller','profile','enabled','fire','save','status'].map(id=>[id,new Element()]));
+const elements=Object.fromEntries(['connect','refresh','settings','controller','profile','enabled','fire','save','status','hardware','hardware-status','panel-input','save-hardware','oled-display'].map(id=>[id,new Element()]));
+elements['panel-input'].options=[{value:'none'},{value:'encoder'},{value:'trackball'}];
+let panelInput='none',activeInput='none',haveControllers=true;
+let oledEnabled=true,activeOled=true;
 let waiting, queue=[], stopped=false, saved, active=0, changedId=false;
 const commands=[];
 function reply(text) {
@@ -24,8 +27,10 @@ const writer={releaseLock:()=>{},write:async bytes=>{
   const [,id,cmd,...args]=new TextDecoder().decode(bytes).trim().split('|');
   commands.push([cmd,...args]);
   let response;
-  if(cmd==='HELLO') response={capabilities:{profile_oled:true}};
-  else if(cmd==='CONTROLLERS') response={selected_index:0,controllers:[{index:0,name:'DualSense'}]};
+  if(cmd==='HELLO') response={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true}};
+  else if(cmd==='PANEL_GET') response={input:panelInput,active_input:activeInput,panel_compiled:true,oled_enabled:oledEnabled,active_oled_enabled:activeOled,trackball_ready:activeInput==='trackball'};
+  else if(cmd==='PANEL_SET') {panelInput=args[0];oledEnabled=args[1]==='1';response={input:panelInput,restart_required:panelInput!==activeInput||oledEnabled!==activeOled};}
+  else if(cmd==='CONTROLLERS') response={selected_index:0,controllers:haveControllers?[{index:0,name:'DualSense'}]:[]};
   else if(cmd==='CONTROLLER_SELECT') response='selected';
   else if(cmd==='PROFILES') response={active:0,labels:['South','East','West','North'],profiles:[{index:0,name:'Default'},{index:1,name:'Arcade'}]};
   else if(cmd==='PROFILE_GET') response={id:changedId?999:10+Number(args[0]),oled_pew_enabled:args[0]==='1',oled_fire_button:3};
@@ -35,7 +40,7 @@ const writer={releaseLock:()=>{},write:async bytes=>{
   const line=`BB1|${id}|OK|${JSON.stringify(response)}\n`;
   reply(line.slice(0,5)); reply(line.slice(5));
 }};
-const port={readable:{getReader:()=>reader},writable:{getWriter:()=>writer},open:async()=>{},close:async()=>{}};
+const port={readable:{getReader:()=>reader},writable:{getWriter:()=>writer},open:async()=>{stopped=false;activeInput=panelInput;activeOled=oledEnabled;},close:async()=>{}};
 const context=vm.createContext({document:{getElementById:id=>elements[id]},navigator:{serial:{requestPort:async()=>port}},
   Option:class {constructor(label,value){this.label=label;this.value=value;}}, TextEncoder,TextDecoder,setTimeout,clearTimeout,console});
 vm.runInContext(source,context);
@@ -54,5 +59,25 @@ saved=null; changedId=true;
 await elements.save.onclick();
 assert.equal(saved,null);
 assert.match(elements.status.textContent,/Profile changed/);
+for(const choice of ['trackball','encoder','none']){
+  await elements.connect.onclick();
+  assert.equal(elements.hardware.disabled,false);
+  elements['panel-input'].value=choice;
+  await elements['save-hardware'].onclick();
+  assert.equal(panelInput,choice);
+  assert.match(elements.status.textContent,/restarting/);
+  assert.equal(elements.hardware.disabled,true);
+}
+haveControllers=false;await elements.connect.onclick();
+assert.equal(elements.settings.disabled,true);
+assert.equal(elements.hardware.disabled,false); /* Hardware setup works before pairing. */
+assert.equal(elements['panel-input'].value,'none');
+await elements['save-hardware'].onclick();
+assert.match(elements.status.textContent,/No restart needed/);
+elements['oled-display'].checked=false;
+await elements['save-hardware'].onclick();assert.equal(oledEnabled,false);assert.match(elements.status.textContent,/restarting/);
+await elements.connect.onclick();assert.equal(elements['oled-display'].checked,false);
+assert.equal(elements['panel-input'].options[2].disabled,false); /* Display off does not disable the control selector. */
+elements['oled-display'].checked=true;await elements['save-hardware'].onclick();assert.equal(oledEnabled,true);
 await reader.cancel();
-console.log('config: connection, split replies, profile selection, checkbox save and stale-profile protection passed');
+console.log('config: serial/profile checks, physical control selection, OLED on/off persistence and reconnect passed');

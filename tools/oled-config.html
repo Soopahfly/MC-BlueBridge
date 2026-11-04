@@ -17,8 +17,17 @@
   #status { min-height:3em; white-space:pre-wrap } small { color:#b6c6d4 }
 </style>
 <h1>BlueBridge OLED</h1>
-<p>Configure the optional fire-button animation on your SSD1306 screen. Settings are saved per profile on the adapter.</p>
+<p>Choose your physical menu control and configure the optional fire-button animation.</p>
 <button id="connect">Connect adapter</button><button id="refresh" disabled>Refresh</button>
+<fieldset id="hardware" disabled>
+  <legend>Adapter controls</legend>
+  <label><input id="oled-display" type="checkbox" checked>Enable OLED display</label>
+  <label for="panel-input">Physical menu control</label>
+  <select id="panel-input"><option value="none">None</option><option value="encoder">Rotary encoder</option><option value="trackball">Pimoroni PIM447 trackball</option></select>
+  <p><small>Display and physical controls are independent. None disables physical menu controls. OLED off blanks the display and stops screen updates. Changes are saved on the adapter and applied after restart.</small></p>
+  <p id="hardware-status" role="status">Connect an adapter to read its settings.</p>
+  <button id="save-hardware">Save and restart</button>
+</fieldset>
 <fieldset id="settings" disabled>
   <legend>PEW PEW animation</legend>
   <label for="controller">Controller</label><select id="controller"></select>
@@ -33,6 +42,7 @@
 const $ = id => document.getElementById(id);
 let port, reader, writer, reading, nextId = 0, pending = new Map(), busy = false;
 let loadedProfileId;
+let hasPanel=false,hasOledToggle=false,panelLoaded=false,expectedRestart=false;
 const encoder = new TextEncoder();
 function status(message) { $('status').textContent = message; }
 function failPending(message) {
@@ -63,11 +73,12 @@ async function receive() {
         }
       }
     }
-  } catch (error) { status(`Connection ended: ${error.message}`); }
+  } catch (error) { status(expectedRestart?'Adapter restarted. Click Connect adapter to reconnect.':`Connection ended: ${error.message}`); }
   finally {
     reader.releaseLock();
     failPending('Adapter disconnected.');
     $('settings').disabled = true; $('refresh').disabled = true;
+    $('hardware').disabled = true; panelLoaded=false;
     $('connect').disabled = false;
   }
 }
@@ -100,7 +111,26 @@ async function loadProfiles() {
   options($('fire'),data.labels.map((label,index) => [index,label]));
   await loadProfile();
 }
+async function loadPanel() {
+  if(!hasPanel){
+    panelLoaded=false;
+    $('hardware-status').textContent='Update the adapter firmware to configure physical controls here.';
+    return;
+  }
+  const panel=await command('PANEL_GET');
+  $('panel-input').value=panel.input;
+  const compiled=panel.panel_compiled??panel.oled_enabled;
+  $('oled-display').checked=Boolean(compiled&&panel.oled_enabled);
+  $('oled-display').disabled=!compiled||!hasOledToggle;
+  panelLoaded=true;
+  $('hardware-status').textContent=compiled
+    ? 'OLED: '+((panel.active_oled_enabled??panel.oled_enabled)?'on':'off')+'. Active control: '+panel.active_input+(panel.active_input==='trackball'?(panel.trackball_ready?' — trackball detected.':' — trackball not ready; Refresh after startup or check wiring.') : '.')
+    : 'This firmware has OLED/control-panel support disabled. Only None is available.';
+  $('panel-input').options[1].disabled=!compiled;
+  $('panel-input').options[2].disabled=!compiled;
+}
 async function refresh() {
+  await loadPanel();
   const data = await command('CONTROLLERS');
   options($('controller'),data.controllers.map(c => [c.index,c.name]));
   if (!data.controllers.length) {
@@ -119,13 +149,15 @@ async function run(action) {
   if (busy) return;
   busy = true;
   $('settings').disabled = true; $('refresh').disabled = true;
+  $('hardware').disabled = true;
   let usable = true;
   try { await action(); }
   catch (error) { usable=false; status(error.message); }
   finally {
     busy=false;
-    $('settings').disabled = !usable || !$('profile').options.length || !port?.readable;
-    $('refresh').disabled = !port?.readable;
+    $('settings').disabled = !usable || !$('profile').options.length || !port?.readable || expectedRestart;
+    $('refresh').disabled = !port?.readable || expectedRestart;
+    $('hardware').disabled = !panelLoaded || !port?.readable || expectedRestart;
   }
 }
 $('connect').onclick = async () => {
@@ -139,16 +171,27 @@ $('connect').onclick = async () => {
       await port.close().catch(()=>{});
     }
     port = await navigator.serial.requestPort();
+    expectedRestart=false;
     await port.open({baudRate:115200});
     writer = port.writable.getWriter(); reader = port.readable.getReader();
     reading = receive();
     const hello = await command('HELLO');
     if (!hello.capabilities?.profile_oled) throw new Error('Install the OLED firmware before using this page.');
+    hasPanel=Boolean(hello.capabilities?.panel_configuration);
+    hasOledToggle=Boolean(hello.capabilities?.oled_toggle);
     $('refresh').disabled = false;
     await run(refresh);
   } catch (error) { status(error.message); $('connect').disabled = false; }
 };
 $('refresh').onclick = () => run(refresh);
+$('save-hardware').onclick = () => run(async () => {
+  const args=[$('panel-input').value];
+  if(hasOledToggle)args.push($('oled-display').checked?'1':'0');
+  const result=await command('PANEL_SET',...args);
+  expectedRestart=Boolean(result.restart_required);
+  status(expectedRestart?'Control setting saved. Adapter restarting; click Connect adapter after it returns.':'Control setting saved. No restart needed.');
+  if(!expectedRestart)await loadPanel();
+});
 $('controller').onchange = () => run(async () => {
   await command('CONTROLLER_SELECT',$('controller').value); await loadProfiles();
 });

@@ -9,6 +9,8 @@ static critical_section_t lock;
 static bb_runtime_state_t runtime_slots[BB_MAX_SLOTS];
 static uint8_t io_slot;
 static bool boot_multi;
+static bb_panel_input_t boot_panel_input;
+static bool boot_oled_enabled;
 static volatile bool mode_restart;
 #define runtime_state runtime_slots[bb_slot_current()]
 static bb_config_t config_state;
@@ -22,6 +24,35 @@ static int management_controller_index = -1;
 
 bool bb_multi_mode(void) { return boot_multi; }
 bool bb_mode_restart_pending(void) { return mode_restart; }
+bb_panel_input_t bb_panel_input_current(void) { return boot_panel_input; }
+bb_panel_input_t bb_panel_input_get(void) {
+    critical_section_enter_blocking(&lock);
+    bb_panel_input_t input=(bb_panel_input_t)config_state.panel_input;
+    critical_section_exit(&lock);
+    return input;
+}
+const char* bb_panel_input_name(bb_panel_input_t input) {
+    switch(input){case BB_PANEL_ENCODER:return "encoder";case BB_PANEL_TRACKBALL:return "trackball";default:return "none";}
+}
+bool bb_panel_input_set(bb_panel_input_t input) {
+    return bb_panel_settings_set(input,bb_oled_enabled_get());
+}
+bool bb_oled_enabled_current(void){return boot_oled_enabled;}
+bool bb_oled_enabled_get(void){
+    critical_section_enter_blocking(&lock);
+    bool enabled=config_state.oled_enabled!=0;
+    critical_section_exit(&lock);return enabled;
+}
+bool bb_panel_settings_set(bb_panel_input_t input,bool oled_enabled) {
+    if(input<BB_PANEL_NONE||input>BB_PANEL_TRACKBALL)return false;
+    critical_section_enter_blocking(&lock);
+    if(config_state.panel_input!=(uint8_t)input||config_state.oled_enabled!=(uint8_t)oled_enabled){
+        config_state.panel_input=(uint8_t)input;config_state.oled_enabled=oled_enabled;config_save_pending=true;
+        if(input!=boot_panel_input||oled_enabled!=boot_oled_enabled)mode_restart=true;
+    }
+    critical_section_exit(&lock);
+    return true;
+}
 void bb_slot_enter(uint8_t slot) { if (slot < BB_MAX_SLOTS) io_slot = slot; }
 uint8_t bb_slot_current(void) {
     if (!boot_multi) return 0;
@@ -116,6 +147,7 @@ static uint16_t allocate_mister_identity_locked(void) {
 static void init_defaults(bb_config_t* cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->schema = BB_CONFIG_SCHEMA;
+    cfg->oled_enabled=1;
     cfg->output_mode = BB_OUTPUT_MISTER;
     cfg->next_controller_id = 1;
     cfg->next_profile_id = 1;
@@ -142,7 +174,9 @@ void bb_state_init(void) {
     }
     if (!bb_config_load(&config_state)) {
         init_defaults(&config_state);
-    } else if (config_state.schema >= 8 && config_state.schema <= 13) {
+    } else if (config_state.schema >= 8 && config_state.schema <= 15) {
+        if(config_state.schema<15)config_state.panel_input=BB_PANEL_ENCODER;
+        config_state.oled_enabled=1;
         config_state.schema = BB_CONFIG_SCHEMA;
         if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_XBOX360) config_state.output_mode = BB_OUTPUT_MISTER;
         config_save_pending = true;
@@ -153,6 +187,10 @@ void bb_state_init(void) {
         config_save_pending = true;
     }
     boot_multi = config_state.multi_controller == 1;
+    if(config_state.panel_input>BB_PANEL_TRACKBALL){config_state.panel_input=BB_PANEL_NONE;config_save_pending=true;}
+    boot_panel_input=(bb_panel_input_t)config_state.panel_input;
+    if(config_state.oled_enabled>1){config_state.oled_enabled=1;config_save_pending=true;}
+    boot_oled_enabled=config_state.oled_enabled!=0;
     config_state.multi_controller = boot_multi;
     if (boot_multi) config_state.output_mode = BB_OUTPUT_MISTER;
 }
@@ -1081,6 +1119,10 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     }
     bb_config_t value = *cfg;
     value.schema = BB_CONFIG_SCHEMA;
+    if(cfg->schema<16)value.oled_enabled=1;
+    if(value.oled_enabled>1)return false;
+    if(cfg->schema<15)value.panel_input=BB_PANEL_ENCODER;
+    if(value.panel_input>BB_PANEL_TRACKBALL)return false;
     if (cfg->schema < 14) memset(value.oled_pew, 0, sizeof(value.oled_pew));
     for (unsigned c = 0; c < BB_MAX_CONTROLLERS; ++c) {
         for (unsigned p = 0; p < BB_MAX_PROFILES; ++p) {
@@ -1104,6 +1146,8 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     if (value.multi_controller > 1 || value.blocked_device_count > BB_MAX_BLOCKED_DEVICES) return false;
     if (value.multi_controller) value.output_mode = BB_OUTPUT_MISTER;
     if (value.multi_controller != boot_multi) mode_restart = true;
+    if(value.panel_input!=(uint8_t)boot_panel_input)mode_restart=true;
+    if((value.oled_enabled!=0)!=boot_oled_enabled)mode_restart=true;
     bb_config_set(&value, true);
     return true;
 }
@@ -1112,6 +1156,8 @@ bool bb_config_reset(void) {
     bb_config_t fresh;
     init_defaults(&fresh);
     if (boot_multi) mode_restart = true;
+    if(boot_panel_input!=BB_PANEL_NONE)mode_restart=true;
+    if(!boot_oled_enabled)mode_restart=true;
     bb_config_set(&fresh, true);
     return true;
 }

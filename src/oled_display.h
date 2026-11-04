@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 void bb_oled_init(void);
+void bb_oled_init_off(void);
 void bb_oled_poll(uint32_t now);
 bool bb_oled_available(void);
 /* Eight text rows, at most 21 ASCII characters each. No transfer unless changed. */

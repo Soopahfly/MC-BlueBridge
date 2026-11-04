@@ -7,6 +7,7 @@
 #include "controller_input.h"
 #include "controller_driver.h"
 #include "bt_host.h"
+#include "control_panel.h"
 #include "pico/bootrom.h"
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
@@ -265,6 +266,28 @@ static void handle_command(char* text) {
     char* cmd = next_field(&cursor);
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
+    if(!strcmp(cmd,"PANEL_GET")){
+        char out[320];bb_panel_input_t selected=bb_panel_input_get(),active=bb_panel_input_current();
+        bool enabled=bb_oled_enabled_get(),current=bb_oled_enabled_current();
+        snprintf(out,sizeof(out),"{\"input\":\"%s\",\"active_input\":\"%s\",\"restart_required\":%s,\"panel_compiled\":%s,\"oled_enabled\":%s,\"active_oled_enabled\":%s,\"trackball_ready\":%s}",
+            bb_panel_input_name(selected),bb_panel_input_name(active),(selected!=active||enabled!=current)?"true":"false",
+            BB_ENABLE_OLED?"true":"false",enabled?"true":"false",current?"true":"false",bb_panel_trackball_ready()?"true":"false");
+        send_ok(id,out);return;
+    }
+    if(!strcmp(cmd,"PANEL_SET")){
+        char* value=next_field(&cursor);char* display=next_field(&cursor);bb_panel_input_t input=BB_PANEL_NONE;
+        if(!value||cursor||(display&&strcmp(display,"0")&&strcmp(display,"1"))){send_err(id,"panel_input");return;}
+        bool enabled=display?display[0]=='1':bb_oled_enabled_get();
+        if(!strcmp(value,"encoder"))input=BB_PANEL_ENCODER;
+        else if(!strcmp(value,"trackball"))input=BB_PANEL_TRACKBALL;
+        else if(strcmp(value,"none")){send_err(id,"panel_input");return;}
+        if(!BB_ENABLE_OLED&&(input!=BB_PANEL_NONE||(display&&enabled))){send_err(id,"panel_not_compiled");return;}
+        if(!bb_panel_settings_set(input,enabled)){send_err(id,"panel_input");return;}
+        char out[128];snprintf(out,sizeof(out),"{\"input\":\"%s\",\"restart_required\":%s}",
+            bb_panel_input_name(input),(input!=bb_panel_input_current()||enabled!=bb_oled_enabled_current())?"true":"false");
+        send_ok(id,out);return;
+    }
+
     if (!strcmp(cmd, "PROFILE_OLED")) {
         char* pi = next_field(&cursor);
         char* enabled = next_field(&cursor);
@@ -286,7 +309,7 @@ static void handle_command(char* text) {
         bb_adapter_name_get(adapter_name, sizeof(adapter_name));
         bb_adapter_custom_name_get(custom_name, sizeof(custom_name));
         pico_get_unique_board_id_string(adapter_id, sizeof(adapter_id));
-        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"profile_oled\":true,\"oled_panel\":%s},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BB_ENABLE_OLED ? "true" : "false", BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
+        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"profile_oled\":true,\"panel_configuration\":true,\"oled_toggle\":true,\"oled_panel\":%s},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BB_ENABLE_OLED ? "true" : "false", BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
         send_ok(id, out);
         return;
     }
@@ -603,7 +626,7 @@ static void handle_command(char* text) {
         char* size = next_field(&cursor);
         char* checksum = next_field(&cursor);
         int schema_value = schema ? atoi(schema) : 0;
-        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13))) {
+        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 14 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V14_SIZE) || (schema_value == 15 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V15_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13 && schema_value != 14 && schema_value != 15))) {
             import_active = false;
             send_err(id, "config_header");
             return;
