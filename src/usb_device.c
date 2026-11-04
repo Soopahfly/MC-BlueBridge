@@ -27,6 +27,8 @@ static uint8_t usb_slot;
 static bool reenumerate;
 static volatile bool usb_mounted;
 static uint32_t switch_last_send;
+static bool restart_waiting;
+static uint32_t restart_at;
 
 static bool queue_push_locked(uint8_t slot, const bb_gamepad_report_t* report) {
     uint32_t now = to_ms_since_boot(get_absolute_time());
@@ -289,10 +291,13 @@ void bb_usb_core1(void) {
         bb_panel_poll();
         bb_usb_service_pending();
         if (bb_mode_restart_pending() && !bb_config_is_pending()) {
-            sleep_ms(300);
-            watchdog_reboot(0, 0, 0);
-            while (true) tight_loop_contents();
-        }
+            uint32_t now=to_ms_since_boot(get_absolute_time());
+            if(!restart_waiting){restart_waiting=true;restart_at=now;}
+            if((uint32_t)(now-restart_at)>=300u) {
+                watchdog_reboot(0, 0, 0);
+                while (true) tight_loop_contents();
+            }
+        } else restart_waiting=false;
         tight_loop_contents();
     }
 }

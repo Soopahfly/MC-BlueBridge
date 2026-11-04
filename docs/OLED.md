@@ -41,8 +41,8 @@ The Python script uses CC/gcc and the firmware C renderer. The web demo is a
 generated copy of the real config page with a mock transport. Its screenshot
 can be recaptured using a headless browser after the simulated connection loads.
 The preview UF2 and checksum are attached to the
-[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.0.5-oled-preview).
-See [release notes and pending hardware checks](RELEASE_NOTES-1.0.5-oled-preview.md).
+[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.0.6-oled-preview).
+See [release notes and pending hardware checks](RELEASE_NOTES-1.0.6-oled-preview.md).
 
 ## Live controller screen
 
@@ -435,3 +435,40 @@ On hardware, first verify the status screen and encoder direction, then mode
 changes/pairing, per-profile persistence after unplugging, and the optional effect.
 Finally compare Bluetooth/USB report and dropped-report diagnostics with the panel
 enabled/disabled, including turbo and two-controller operation.
+
+## Bluetooth performance and reliability diagnostics
+
+The [implementation checklist](LATENCY_PLAN.md) records software checks separately
+from physical validation. Version 1.0.6 keeps controllers on Bluetooth; USB is
+still the output to MiSTer. The screen/PEW/trackball features remain available.
+
+The USB management protocol accepts these newline-terminated commands:
+
+```text
+BB1|1|USB_QUEUE
+BB1|2|SAVE_STATUS
+```
+
+`USB_QUEUE` returns a `slots` array with current `depth`, `high_water`,
+`overflows`, `oldest_age_ms` and `max_age_ms`. Age is time waiting inside the
+adapter's USB queue, not radio delay or button-to-screen latency. Up to eight
+edge reports are retained per slot; longer host stalls can overflow and are
+counted. Analog values coalesce while button/hat/trigger pressed states agree.
+
+`SAVE_STATUS` returns `pending` and the boot's cumulative `failures`. Saves batch
+for 250 ms, with a maximum initial batch window of 1 s. Failed saves retry at
+most once per second and prevent a requested settings restart. Keep the adapter
+powered while pending. Identical flash images skip erase/program. Flash writes
+still pause the processor; this firmware reduces their frequency.
+
+For comparison, use the same Bluetooth controller, distance, MiSTer core and
+host settings. Record queue counters with OLED on/off, PEW off/on, turbo off/on
+and one/two controllers. The optional no-OLED UF2 provides a compile-time panel
+baseline. Reboot between runs to reset queue statistics. Inspect rapid taps and
+trigger press/releases under host load; queue metrics alone cannot establish
+end-to-end latency. Pairing, physical controls, stack high-water and actual
+button-to-output timing still need hardware testing.
+
+`tools/build.ps1` now runs `tools/check_stack.py` after building. The audit checks
+project frame reports and the two 4 KiB stack reservations; it cannot prove all
+SDK/libc/interrupt nesting or replace runtime high-water measurements.

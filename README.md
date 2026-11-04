@@ -34,7 +34,7 @@ photographs. The web screenshot uses an explicitly simulated USB adapter.
 ![Web configuration with independent OLED and control selection](docs/images/web-config.png)
 
 [Interactive configuration demo](docs/demos/oled-config-demo.html) (serve locally;
-uses a simulated adapter) · [Preview firmware and release notes](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.0.5-oled-preview)
+uses a simulated adapter) · [Preview firmware and release notes](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.0.6-oled-preview)
 
 The preview firmware is for Pico 2 W. It is build/test validated and awaits
 physical flashing, PIM447/encoder/OLED checks and latency testing.

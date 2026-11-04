@@ -33,4 +33,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
     & $cmake --build $BuildDirectory --parallel 8
     if ($LASTEXITCODE -ne 0) { throw 'Firmware build failed.' }
+    & python tools/check_stack.py $BuildDirectory
+    if ($LASTEXITCODE -ne 0) { throw 'Static stack audit failed.' }
 } finally { Pop-Location }
