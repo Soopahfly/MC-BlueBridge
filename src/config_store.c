@@ -227,6 +227,8 @@ bool bb_config_save(const bb_config_t* cfg) {
     stored->size = sizeof(bb_config_t);
     stored->cfg = *cfg;
     stored->checksum = bb_config_checksum(&stored->cfg);
+    /* Compare the complete stored image, including metadata/checksum. */
+    if (!memcmp((const void*)(XIP_BASE + BB_CFG_OFFSET), sector, sizeof(sector))) return true;
     flash_write_params_t params = { .sector = sector };
     return flash_safe_execute(write_config_flash, &params, 1000) == PICO_OK;
 }

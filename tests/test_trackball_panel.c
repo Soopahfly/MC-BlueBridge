@@ -14,8 +14,8 @@ void bb_trackball_colour(uint8_t r,uint8_t g,uint8_t b,uint8_t w){(void)r;(void)
 #undef main
 int main(void){
     assert(common_panel_checks()==0);
-    assert(bb_config_reset());bb_config_flush_pending();bb_state_init();
-    assert(bb_panel_input_set(BB_PANEL_TRACKBALL));bb_config_flush_pending();bb_state_init();
+    assert(bb_config_reset());test_time+=250;bb_config_flush_pending();bb_state_init();
+    assert(bb_panel_input_set(BB_PANEL_TRACKBALL));test_time+=250;bb_config_flush_pending();bb_state_init();
     bb_panel_init();assert(fake_inits==1);
     uint8_t addr[6]={2,4,6,8,10,12},index;
     assert(bb_controller_activate_or_create(addr,1,2,"Trackball test pad",&index));
@@ -35,7 +35,7 @@ int main(void){
     fake_event.down=true;tick();test_time+=40;tick();
     fake_ready=false;tick();test_time+=900;tick();assert(editing); /* Device loss does not synthesize click/hold. */
     fake_ready=true;fake_event=(bb_trackball_event_t){0};tick();assert(editing);
-    assert(bb_panel_input_set(BB_PANEL_NONE));bb_config_flush_pending();bb_state_init();
+    assert(bb_panel_input_set(BB_PANEL_NONE));test_time+=250;bb_config_flush_pending();bb_state_init();
     bb_panel_init();assert(fake_inits==1); /* None never initializes trackball. */
     menu=editing=false;fake_event.y=3;fake_event.clicks=1;
     unsigned polls=fake_polls;tick();

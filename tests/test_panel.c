@@ -8,12 +8,14 @@
 #include "hardware/flash.h"
 #include <assert.h>
 
+int test_flash_error;
+unsigned test_flash_erases;
 unsigned test_core=1;
 uint32_t test_time;
 bool test_gpio[30];
 uint8_t test_flash[PICO_FLASH_SIZE_BYTES];
 static unsigned reenumerations;
-static unsigned pew_draws;
+static unsigned pew_draws, picture_draws;
 static unsigned off_requests;
 static uint8_t picture[1024];
 void bb_oled_init(void) {}
@@ -22,7 +24,7 @@ void bb_oled_poll(uint32_t now) { (void)now; }
 bool bb_oled_available(void) { return true; }
 void bb_oled_text(const char lines[8][22]) { (void)lines; }
 void bb_oled_pew(uint8_t frame) { (void)frame; ++pew_draws; }
-uint8_t* bb_oled_graphics_begin(void) { return picture; }
+uint8_t* bb_oled_graphics_begin(void) { ++picture_draws; return picture; }
 void bb_oled_graphics_footer(const char* text) { snprintf(rows[7],22,"%s",text); }
 void bb_usb_request_reenumeration(void) { ++reenumerations; }
 void bb_led_signal_profile_changed(void) {}
@@ -51,6 +53,10 @@ int main(void) {
     bb_state_set_controller(true,0,"Test pad");
     bb_panel_init();
     assert(!strstr(rows[0],"BLUEBRIDGE"));
+    test_time+=60;bb_panel_poll();unsigned drawn=picture_draws;
+    test_time+=60;bb_panel_poll();assert(picture_draws==drawn);
+    raw(1);test_time+=60;bb_panel_poll();assert(picture_draws==drawn+1);
+    raw(0);test_time+=60;bb_panel_poll();
     item=USB_MODE; menu=true; begin_edit(); rotate(1);
     assert(value==1 && bb_output_mode()==BB_OUTPUT_MISTER && reenumerations==0);
     apply(); assert(bb_output_mode()==BB_OUTPUT_XINPUT && reenumerations==1);
@@ -85,12 +91,12 @@ int main(void) {
     assert(picture[40/8*128+110]&(1u<<(40%8)));
 
     /* Reboot into multi-controller mode and check mode/turbo restrictions. */
-    assert(bb_multi_mode_set(true)); bb_config_flush_pending(); bb_state_init();
+    assert(bb_multi_mode_set(true)); test_time+=250;bb_config_flush_pending(); bb_state_init();
     snapshot(); assert(bb_multi_mode() && bb_output_mode()==BB_OUTPUT_MISTER);
     editing=false; item=USB_MODE; begin_edit(); assert(!editing);
     item=TURBO; begin_edit(); assert(!editing);
     item=PEW; begin_edit(); assert(editing); /* Cosmetic setting remains available. */
-    assert(bb_panel_settings_set(bb_panel_input_get(),false));bb_config_flush_pending();bb_state_init();
+    assert(bb_panel_settings_set(bb_panel_input_get(),false));test_time+=250;bb_config_flush_pending();bb_state_init();
     bb_panel_init();assert(off_requests==1);
     unsigned old_pew=pew_draws;tick();assert(pew_draws==old_pew);
     puts("panel: mode confirmation, turbo settings, profile edits, PEW timing and multi-mode restrictions passed");

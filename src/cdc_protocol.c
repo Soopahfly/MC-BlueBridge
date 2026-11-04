@@ -267,6 +267,11 @@ static void handle_command(char* text) {
     char* cmd = next_field(&cursor);
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
+    if(!strcmp(cmd,"SAVE_STATUS")) {
+        char out[128];
+        snprintf(out,sizeof(out),"{\"pending\":%s,\"failures\":%lu}",bb_config_is_pending()?"true":"false",(unsigned long)bb_config_save_failures());
+        send_ok(id,out);return;
+    }
     if(!strcmp(cmd,"PANEL_GET")){
         static char out[320];bb_panel_input_t selected=bb_panel_input_get(),active=bb_panel_input_current();
         bool enabled=bb_oled_enabled_get(),current=bb_oled_enabled_current();

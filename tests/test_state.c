@@ -5,7 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 uint8_t test_flash[PICO_FLASH_SIZE_BYTES];
+int test_flash_error;
+unsigned test_flash_erases;
 unsigned test_core;
+uint32_t test_time;
 static bb_config_t cfg, loaded;
 static uint32_t hash(const void* data,size_t size) {
     const uint8_t* p=data; uint32_t h=2166136261u;
@@ -90,16 +93,16 @@ int main(void) {
     assert(bb_profile_oled_get(0)==0x84); /* Schema-14 PEW settings survive. */
     assert(bb_panel_input_set(BB_PANEL_TRACKBALL));
     assert(bb_panel_input_get()==BB_PANEL_TRACKBALL&&bb_panel_input_current()==BB_PANEL_ENCODER);
-    assert(bb_mode_restart_pending());bb_config_flush_pending();bb_state_init();
+    assert(bb_mode_restart_pending());test_time+=250;bb_config_flush_pending();bb_state_init();
     assert(bb_panel_input_current()==BB_PANEL_TRACKBALL);
-    assert(bb_panel_input_set(BB_PANEL_NONE));bb_config_flush_pending();bb_state_init();
+    assert(bb_panel_input_set(BB_PANEL_NONE));test_time+=250;bb_config_flush_pending();bb_state_init();
     assert(bb_panel_input_current()==BB_PANEL_NONE);
     bb_config_get(&loaded);loaded.panel_input=3;
     assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
     assert(bb_oled_enabled_get()&&bb_oled_enabled_current());
     assert(bb_panel_settings_set(BB_PANEL_NONE,false));
     assert(!bb_oled_enabled_get()&&bb_oled_enabled_current());
-    bb_config_flush_pending();bb_state_init();assert(!bb_oled_enabled_current());
+    test_time+=250;bb_config_flush_pending();bb_state_init();assert(!bb_oled_enabled_current());
     bb_config_get(&loaded);loaded.oled_enabled=2;
     assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
     loaded.oled_enabled=0;loaded.schema=15;loaded.panel_input=BB_PANEL_TRACKBALL;
@@ -107,5 +110,17 @@ int main(void) {
     memcpy(test_flash+base,v15_header,sizeof(v15_header));
     memcpy(test_flash+base+sizeof(v15_header),&loaded,BB_CONFIG_V15_SIZE);
     bb_state_init();assert(bb_oled_enabled_current()&&bb_panel_input_current()==BB_PANEL_TRACKBALL);
+    test_time+=250;bb_config_flush_pending();assert(!bb_config_is_pending());
+    unsigned erased=test_flash_erases;
+    bb_config_get(&loaded);bb_config_set(&loaded,true);
+    bb_config_flush_pending();assert(bb_config_is_pending()); /* Coalescing delay. */
+    test_time+=250;bb_config_flush_pending();assert(!bb_config_is_pending());
+    assert(test_flash_erases==erased); /* Identical image never erases flash. */
+    assert(bb_panel_input_set(BB_PANEL_NONE));test_flash_error=-1;
+    test_time+=250;bb_config_flush_pending();assert(bb_config_is_pending());
+    assert(bb_config_save_failures()==1);
+    bb_config_flush_pending();assert(bb_config_save_failures()==1); /* No hot retry loop. */
+    test_flash_error=0;test_time+=1000;bb_config_flush_pending();
+    assert(!bb_config_is_pending());bb_state_init();assert(bb_panel_input_current()==BB_PANEL_NONE);
     printf("state: edge events, profile lifecycle, flash round-trip and schema migration passed (%zu bytes)\n",sizeof(cfg));
 }

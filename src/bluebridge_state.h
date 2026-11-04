@@ -211,11 +211,14 @@ typedef struct {
 } bb_input_config_t;
 void bb_input_config_get(bb_input_config_t* out);
 void bb_active_profile_get(bb_profile_t* out);
+void bb_active_controller_summary_get(bb_controller_t* out);
 void bb_active_controller_get(bb_controller_t* out, uint8_t* active_index);
 uint8_t bb_active_profile_index(void);
 uint8_t bb_output_mode_value(void);
 void bb_config_set(const bb_config_t* cfg, bool persist);
 void bb_config_flush_pending(void);
+bool bb_config_is_pending(void);
+uint32_t bb_config_save_failures(void);
 void bb_state_note_usb_report(bool sent);
 void bb_state_note_slot_usb_report(uint8_t slot, bool sent);
 bb_controller_t* bb_config_active_controller(bb_config_t* cfg);

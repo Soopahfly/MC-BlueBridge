@@ -2,6 +2,7 @@
 #include "config_store.h"
 #include "pico/critical_section.h"
 #include "pico/platform.h"
+#include "pico/stdlib.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -16,6 +17,15 @@ static volatile bool mode_restart;
 static bb_config_t config_state;
 static volatile bool config_save_pending;
 static bb_config_t save_copy;
+static uint32_t save_changed_at, save_first_at, save_retry_at, save_failures;
+static bool save_retry;
+/* Called with the configuration lock held. */
+static void request_save_locked(void) {
+    if (!config_save_pending) save_first_at = to_ms_since_boot(get_absolute_time());
+    save_changed_at = to_ms_since_boot(get_absolute_time());
+    config_save_pending = true;
+}
+
 static uint32_t capture_previous[BB_MAX_SLOTS];
 #define capture_previous_buttons capture_previous[bb_slot_current()]
 static uint32_t capture_masks[BB_MAX_SLOTS];
@@ -47,7 +57,7 @@ bool bb_panel_settings_set(bb_panel_input_t input,bool oled_enabled) {
     if(input<BB_PANEL_NONE||input>BB_PANEL_TRACKBALL)return false;
     critical_section_enter_blocking(&lock);
     if(config_state.panel_input!=(uint8_t)input||config_state.oled_enabled!=(uint8_t)oled_enabled){
-        config_state.panel_input=(uint8_t)input;config_state.oled_enabled=oled_enabled;config_save_pending=true;
+        config_state.panel_input=(uint8_t)input;config_state.oled_enabled=oled_enabled;request_save_locked();
         if(input!=boot_panel_input||oled_enabled!=boot_oled_enabled)mode_restart=true;
     }
     critical_section_exit(&lock);
@@ -97,7 +107,7 @@ bool bb_multi_mode_set(bool enabled) {
             config_state.output_mode = mode >= BB_OUTPUT_MISTER && mode <= BB_OUTPUT_XBOX360 ? mode : BB_OUTPUT_MISTER;
         }
         config_state.multi_controller = enabled;
-        config_save_pending = true;
+        request_save_locked();
         mode_restart = true;
     }
     critical_section_exit(&lock);
@@ -167,6 +177,7 @@ uint32_t bb_config_checksum(const bb_config_t* cfg) {
 
 void bb_state_init(void) {
     critical_section_init(&lock);
+    config_save_pending=false;save_retry=false;save_failures=0;
     memset(runtime_slots, 0, sizeof(runtime_slots));
     for (unsigned i = 0; i < BB_MAX_SLOTS; ++i) {
         runtime_slots[i].controller_index = -1;
@@ -179,17 +190,17 @@ void bb_state_init(void) {
         config_state.oled_enabled=1;
         config_state.schema = BB_CONFIG_SCHEMA;
         if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_XBOX360) config_state.output_mode = BB_OUTPUT_MISTER;
-        config_save_pending = true;
+        request_save_locked();
     } else if (config_state.schema != BB_CONFIG_SCHEMA) {
         init_defaults(&config_state);
     } else if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_XBOX360) {
         config_state.output_mode = BB_OUTPUT_MISTER;
-        config_save_pending = true;
+        request_save_locked();
     }
     boot_multi = config_state.multi_controller == 1;
-    if(config_state.panel_input>BB_PANEL_TRACKBALL){config_state.panel_input=BB_PANEL_NONE;config_save_pending=true;}
+    if(config_state.panel_input>BB_PANEL_TRACKBALL){config_state.panel_input=BB_PANEL_NONE;request_save_locked();}
     boot_panel_input=(bb_panel_input_t)config_state.panel_input;
-    if(config_state.oled_enabled>1){config_state.oled_enabled=1;config_save_pending=true;}
+    if(config_state.oled_enabled>1){config_state.oled_enabled=1;request_save_locked();}
     boot_oled_enabled=config_state.oled_enabled!=0;
     config_state.multi_controller = boot_multi;
     if (boot_multi) config_state.output_mode = BB_OUTPUT_MISTER;
@@ -455,6 +466,17 @@ uint8_t bb_controller_count(void) {
     return count;
 }
 
+/* Display needs metadata and the active profile; menu browsing uses the full getter. */
+void bb_active_controller_summary_get(bb_controller_t* out) {
+    critical_section_enter_blocking(&lock);
+    bb_controller_t* c = selected_controller_locked();
+    if (c) {
+        memcpy(out, c, offsetof(bb_controller_t, profiles));
+        if (c->active_profile < c->profile_count) out->profiles[c->active_profile] = c->profiles[c->active_profile];
+    } else memset(out, 0, sizeof(*out));
+    critical_section_exit(&lock);
+}
+
 void bb_active_controller_get(bb_controller_t* out, uint8_t* active_index) {
     critical_section_enter_blocking(&lock);
     uint8_t input_index = boot_multi && !get_core_num() ? input_controller_index_locked() : selected_controller_index_locked();
@@ -492,20 +514,38 @@ uint8_t bb_output_mode_value(void) {
 void bb_config_set(const bb_config_t* cfg, bool persist) {
     critical_section_enter_blocking(&lock);
     config_state = *cfg;
-    if (persist) config_save_pending = true;
+    if (persist) request_save_locked();
     critical_section_exit(&lock);
 }
 
+bool bb_config_is_pending(void) {
+    critical_section_enter_blocking(&lock);
+    bool pending = config_save_pending;
+    critical_section_exit(&lock);
+    return pending;
+}
+uint32_t bb_config_save_failures(void) { return save_failures; }
 void bb_config_flush_pending(void) {
+    uint32_t now = to_ms_since_boot(get_absolute_time());
     bool save = false;
     critical_section_enter_blocking(&lock);
-    if (config_save_pending) {
+    if (config_save_pending && ((uint32_t)(now-save_changed_at)>=250u || (uint32_t)(now-save_first_at)>=1000u) &&
+        (!save_retry || (uint32_t)(now-save_retry_at)>=1000u)) {
         save_copy = config_state;
         config_save_pending = false;
         save = true;
     }
     critical_section_exit(&lock);
-    if (save) bb_config_save(&save_copy);
+    if (!save) return;
+    bool ok = bb_config_save(&save_copy);
+    critical_section_enter_blocking(&lock);
+    save_retry = !ok;
+    if (!ok) {
+        config_save_pending = true;
+        save_retry_at = now;
+        ++save_failures;
+    }
+    critical_section_exit(&lock);
 }
 
 void bb_state_note_slot_usb_report(uint8_t slot, bool sent) {
@@ -560,7 +600,7 @@ bool bb_profile_duplicate(uint8_t source_index, const char* name, uint8_t* out_i
             controller->profiles[index].mister_identity = allocate_mister_identity_locked();
             controller->profiles[index].mister_mapping_mode = 0;
             set_name(controller->profiles[index].name, sizeof(controller->profiles[index].name), name, "Copy");
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -580,7 +620,7 @@ bool bb_profile_create(const char* name, uint8_t* out_index) {
             init_profile(&controller->profiles[index], config_state.next_profile_id++, allocate_mister_identity_locked(), name);
             config_state.oled_pew[controller - config_state.controllers][index] = 0;
             controller->profiles[index].mister_mapping_mode = 0;
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -596,7 +636,7 @@ bool bb_profile_select(uint8_t index) {
         bb_controller_t* controller = selected_controller_locked();
         if (index < controller->profile_count) {
             controller->active_profile = index;
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -616,7 +656,7 @@ bool bb_profile_delete(uint8_t index) {
             for (uint8_t i = index; i + 1 < controller->profile_count; ++i) controller->profiles[i] = controller->profiles[i + 1];
             controller->profile_count--;
             if (controller->active_profile >= controller->profile_count) controller->active_profile = 0;
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -631,7 +671,7 @@ bool bb_profile_rename(uint8_t index, const char* name) {
         bb_controller_t* controller = selected_controller_locked();
         if (index < controller->profile_count) {
             set_name(controller->profiles[index].name, sizeof(controller->profiles[index].name), name, "Profile");
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -646,7 +686,7 @@ bool bb_profile_set_mapping(uint8_t profile_index, uint8_t input, uint8_t output
         bb_controller_t* controller = selected_controller_locked();
         if (profile_index < controller->profile_count) {
             controller->profiles[profile_index].button_map[input] = output;
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -673,7 +713,7 @@ bool bb_profile_set_tuning(uint8_t profile_index, uint8_t invert_x, uint8_t inve
                 profile->turbo_rate_hz = turbo_rate_hz;
                 profile->turbo_mask = turbo_mask;
             }
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -699,7 +739,7 @@ bool bb_profile_set_oled(uint8_t profile_index, bool enabled, uint8_t button) {
     if (c && profile_index < c->profile_count) {
         uint8_t* value = &config_state.oled_pew[c - config_state.controllers][profile_index];
         uint8_t next = button | (enabled ? 0x80u : 0);
-        if (*value != next) { *value = next; config_save_pending = true; }
+        if (*value != next) { *value = next; request_save_locked(); }
         ok = true;
     }
     critical_section_exit(&lock);
@@ -714,7 +754,7 @@ bool bb_profile_set_turbo_modifier(uint8_t profile_index, uint8_t modifier) {
         bb_controller_t* controller = selected_controller_locked();
         if (profile_index < controller->profile_count) {
             controller->profiles[profile_index].turbo_modifier = modifier;
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -742,7 +782,7 @@ bool bb_profile_set_macro(uint8_t profile_index, uint8_t macro_index, uint8_t en
                     if (profile->button_map[i] == (uint8_t)(BB_MAP_MACRO1 + macro_index)) profile->button_map[i] = BB_MAP_DISABLED;
                 }
             }
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -761,7 +801,7 @@ bool bb_profile_set_turbo_control(uint8_t profile_index, uint8_t enabled, uint8_
             profile->turbo_enabled = enabled ? 1 : 0;
             profile->turbo_control_mode = mode;
             profile->turbo_control_button = button;
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -785,7 +825,7 @@ bool bb_profile_set_separate_mapping(uint8_t profile_index) {
             }
             if (shared || profile->mister_identity == 0) profile->mister_identity = allocate_mister_identity_locked();
             profile->mister_mapping_mode = 0;
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -801,7 +841,7 @@ bool bb_profile_share_mapping(uint8_t profile_index, uint8_t target_index) {
         if (profile_index < controller->profile_count && target_index < controller->profile_count && profile_index != target_index) {
             controller->profiles[profile_index].mister_identity = controller->profiles[target_index].mister_identity;
             controller->profiles[profile_index].mister_mapping_mode = 1;
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
         }
     }
@@ -813,7 +853,7 @@ bool bb_adapter_rename(const char* name) {
     if (!name || strlen(name) >= BB_MAX_NAME) return false;
     critical_section_enter_blocking(&lock);
     set_name(config_state.adapter_name, sizeof(config_state.adapter_name), name, "");
-    config_save_pending = true;
+    request_save_locked();
     critical_section_exit(&lock);
     return true;
 }
@@ -836,7 +876,7 @@ bool bb_controller_rename(uint8_t index, const char* name) {
     bool ok = index < config_state.controller_count;
     if (ok) {
         set_name(config_state.controller_names[index], BB_MAX_NAME, name, "");
-        config_save_pending = true;
+        request_save_locked();
     }
     critical_section_exit(&lock);
     return ok;
@@ -883,7 +923,7 @@ bool bb_controller_forget(uint8_t index, uint8_t address_out[6]) {
         else if (config_state.active_controller >= config_state.controller_count) config_state.active_controller = 0;
         if (management_controller_index == index) management_controller_index = config_state.controller_count ? config_state.active_controller : -1;
         else if (management_controller_index > index) management_controller_index--;
-        config_save_pending = true;
+        request_save_locked();
         ok = true;
     }
     critical_section_exit(&lock);
@@ -917,7 +957,7 @@ bool bb_blocked_device_add(const uint8_t address[6], const char* name) {
     for (uint8_t i = 0; i < config_state.blocked_device_count; ++i) {
         if (address_equal(config_state.blocked_devices[i].bluetooth_address, address)) {
             if (name && name[0]) set_name(config_state.blocked_devices[i].name, sizeof(config_state.blocked_devices[i].name), name, "Bluetooth Device");
-            config_save_pending = true;
+            request_save_locked();
             ok = true;
             break;
         }
@@ -927,7 +967,7 @@ bool bb_blocked_device_add(const uint8_t address[6], const char* name) {
         memset(entry, 0, sizeof(*entry));
         memcpy(entry->bluetooth_address, address, 6);
         set_name(entry->name, sizeof(entry->name), name, "Bluetooth Device");
-        config_save_pending = true;
+        request_save_locked();
         ok = true;
     }
     critical_section_exit(&lock);
@@ -943,7 +983,7 @@ bool bb_blocked_device_remove(const uint8_t address[6]) {
         for (uint8_t j = i; j + 1 < config_state.blocked_device_count; ++j) config_state.blocked_devices[j] = config_state.blocked_devices[j + 1];
         memset(&config_state.blocked_devices[config_state.blocked_device_count - 1], 0, sizeof(config_state.blocked_devices[0]));
         config_state.blocked_device_count--;
-        config_save_pending = true;
+        request_save_locked();
         ok = true;
         break;
     }
@@ -978,7 +1018,7 @@ bool bb_controller_resolve_identity(const uint8_t address[6], const uint8_t iden
     }
     if (!known && transient >= 0) {
         memcpy(config_state.controllers[transient].bluetooth_address, identity, 6);
-        config_save_pending = true;
+        request_save_locked();
         known = true;
     }
     critical_section_exit(&lock);
@@ -1021,7 +1061,7 @@ bool bb_controller_activate_or_create(const uint8_t address[6], uint16_t vendor_
             changed = true;
         }
         if (!boot_multi || management_controller_index < 0) management_controller_index = index;
-        if (changed) config_save_pending = true;
+        if (changed) request_save_locked();
         ok = true;
     } else if (config_state.controller_count < BB_MAX_CONTROLLERS) {
         index = config_state.controller_count++;
@@ -1042,7 +1082,7 @@ bool bb_controller_activate_or_create(const uint8_t address[6], uint16_t vendor_
         controller->profiles[0].mister_mapping_mode = 0;
         if (!boot_multi) config_state.active_controller = index;
         if (!boot_multi || management_controller_index < 0) management_controller_index = index;
-        config_save_pending = true;
+        request_save_locked();
         ok = true;
     }
     critical_section_exit(&lock);
@@ -1058,7 +1098,7 @@ bool bb_controller_update_identity(uint8_t index, uint16_t vendor_id, uint16_t p
         controller->native_vendor_id = vendor_id;
         controller->native_product_id = product_id;
         set_name(controller->name, sizeof(controller->name), name, "Bluetooth Controller");
-        config_save_pending = true;
+        request_save_locked();
         ok = true;
     }
     critical_section_exit(&lock);
@@ -1089,7 +1129,7 @@ bool bb_output_mode_set(bb_output_mode_t mode) {
     if (mode < BB_OUTPUT_MISTER || mode > BB_OUTPUT_XBOX360 || (boot_multi && mode != BB_OUTPUT_MISTER)) return false;
     critical_section_enter_blocking(&lock);
     config_state.output_mode = (uint8_t)mode;
-    config_save_pending = true;
+    request_save_locked();
     critical_section_exit(&lock);
     return true;
 }

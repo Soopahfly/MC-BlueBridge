@@ -46,6 +46,9 @@ static uint8_t effect;
 static bool initialized;
 static bool live_screen = true;
 static uint32_t last_live_frame;
+static bb_pad_picture_t last_picture;
+static char last_footer[22];
+static bool picture_valid;
 
 #if BB_USE_ENCODER
 static uint8_t encoder_pins(void) {
@@ -59,7 +62,8 @@ static void encoder_irq(uint gpio, uint32_t events) {
 }
 #endif
 static void snapshot(void) {
-    bb_active_controller_get(&controller, NULL);
+    if(menu)bb_active_controller_get(&controller, NULL);
+    else bb_active_controller_summary_get(&controller);
     bb_state_get(&runtime);
     if (runtime.controller_index != bb_selected_controller_index()) {
         runtime.controller_connected = false;
@@ -186,6 +190,7 @@ static void value_text(unsigned choice, int v, char* out, size_t size) {
 static void draw(uint32_t now) {
     if(!bb_oled_enabled_current())return;
     if (!menu && pew_active) {
+        picture_valid=false;
         bb_oled_pew((uint8_t)((uint32_t)(now-pew_at)/100u));
         return;
     }
@@ -217,12 +222,16 @@ static void draw(uint32_t now) {
             }
             if(mask&turbo)v.turbo_buttons|=1u<<i;
         }
-        bb_pad_render(bb_oled_graphics_begin(),&v);
         char footer[22];
         snprintf(footer,sizeof(footer),"%.15s%s",profile()->name,turbo?" TURBO":"");
-        bb_oled_graphics_footer(footer);
+        if(!picture_valid || memcmp(&last_picture,&v,sizeof(v)) || strcmp(last_footer,footer)) {
+            bb_pad_render(bb_oled_graphics_begin(),&v);
+            bb_oled_graphics_footer(footer);
+            last_picture=v;memcpy(last_footer,footer,sizeof(last_footer));picture_valid=true;
+        }
         return;
     }
+    picture_valid=false;
     memset(rows, 0, sizeof(rows));
     if (!menu) {
         char name[BB_MAX_NAME];
@@ -272,6 +281,7 @@ void bb_panel_poll(void) {
     if (!initialized) return;
     uint32_t now = to_ms_since_boot(get_absolute_time());
     bb_oled_poll(now);
+    if(!bb_oled_enabled_current() && bb_panel_input_current()==BB_PANEL_NONE)return;
     int delta=0,press=0;
 #if BB_USE_ENCODER
     if(bb_panel_input_current()==BB_PANEL_ENCODER){

@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+int test_flash_error;
+unsigned test_flash_erases;
 unsigned test_core;
 uint32_t test_time;
 uint8_t test_flash[PICO_FLASH_SIZE_BYTES];

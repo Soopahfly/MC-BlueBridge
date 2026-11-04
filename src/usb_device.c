@@ -309,7 +309,8 @@ void bb_usb_core1(void) {
         bb_usb_service_pending();
         bb_config_flush_pending();
         bb_panel_poll();
-        if (bb_mode_restart_pending()) {
+        bb_usb_service_pending();
+        if (bb_mode_restart_pending() && !bb_config_is_pending()) {
             sleep_ms(300);
             watchdog_reboot(0, 0, 0);
             while (true) tight_loop_contents();
