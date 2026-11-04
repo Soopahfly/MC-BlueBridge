@@ -8,7 +8,7 @@ Controllers connect over Bluetooth; USB is the output to MiSTer. Software checks
 - [x] 4. Avoid unchanged flash writes, coalesce saves and retain failed saves for controlled retry.
 - [x] 5. Add USB queue age/depth diagnostics and backpressure tests, preserving button edges.
 - [x] 6. Schedule turbo independently of Bluetooth reports, preserving immediate releases and profile behavior.
-- [ ] 7. Run regression tests and both firmware builds; publish updated documentation and firmware.
+- [x] 7. Run regression tests and both firmware builds; publish updated documentation and firmware.
 - [ ] Hardware: pairing, configuration import/export, simultaneous controllers, OLED/controls and turbo.
 - [ ] Hardware: measure Bluetooth-to-USB latency and queue behavior before claiming improvements.
 
@@ -44,13 +44,15 @@ The frame-size guard now covers every project C source. `python tools/check_stac
 
 ## Final software verification (1.0.6)
 
-- [x] Native regression suite: 12 executables, including input processing, USB queue, timed turbo, state/persistence, OLED, encoder and trackball.
+- [x] Native regression suite: 11 executables, including input processing, USB queue, timed turbo, state/persistence, OLED, encoder and trackball.
 - [x] Web Serial configuration tests.
 - [x] OLED-enabled and disabled Pico 2 W Release builds (SDK 2.3.1, Arm GCC 14.3).
 - [x] Static frame/linker audit: 277 panel-build frames and 253 no-panel frames; largest 600 bytes; two 4096-byte stacks in both builds.
 - [x] Documentation updated with diagnostics, comparison procedure and unchanged hardware limitations.
-- [ ] Publish 1.0.6 preview UF2 files and SHA-256 checksums.
+- [x] Publish 1.0.6 preview UF2 files and SHA-256 checksums.
 
 The 300 ms settings-restart grace period now continues servicing USB and resets
 when a save becomes pending. Schema 16 is unchanged. Screenshots and renderer
 GIF demonstrations remain applicable to the retained OLED/PEW/control features.
+
+Published: [1.0.6 preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.0.6-oled-preview), including OLED-enabled and no-OLED UF2s plus SHA256SUMS. The earlier preview is marked superseded. Hardware checklist items deliberately remain open.

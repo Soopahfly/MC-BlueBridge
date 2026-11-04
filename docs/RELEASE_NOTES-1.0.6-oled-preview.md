@@ -18,7 +18,7 @@ on physical OLED/encoder/PIM447 hardware; controller latency is unmeasured.**
   Physical releases are processed immediately; capture/disconnect cancel pulses.
 - Queue depth/age/overflow and save-status commands for physical testing.
 
-See the [checked implementation plan](LATENCY_PLAN.md) for validation and remaining
+See the [checked implementation plan](https://github.com/Soopahfly/MC-BlueBridge/blob/main/docs/LATENCY_PLAN.md) for validation and remaining
 hardware checks. No end-to-end latency improvement has been measured yet.
 
 The OLED-enabled UF2 supports None/Encoder/PIM447 as before. The optional
@@ -55,7 +55,7 @@ retain OLED on and migrate to Encoder to preserve the previous behavior.
    Reconnect from the web GUI after the adapter returns.
 
 Default wiring: OLED SDA GP4 / SCL GP5; encoder A GP6 / B GP7 / switch GP8;
-PIM447 SDA GP2 / SCL GP3. Use 3.3 V and shared GND. See [the full guide](OLED.md)
+PIM447 SDA GP2 / SCL GP3. Use 3.3 V and shared GND. See [the full guide](https://github.com/Soopahfly/MC-BlueBridge/blob/main/docs/OLED.md)
 for physical pin numbers and bare-encoder wiring.
 
 The included web page supports these settings. The external MiSTer Companion
