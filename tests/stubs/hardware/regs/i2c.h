@@ -1,0 +1,5 @@
+#pragma once
+#define I2C_IC_RAW_INTR_STAT_TX_ABRT_BITS (1u<<6)
+#define I2C_IC_RAW_INTR_STAT_STOP_DET_BITS (1u<<9)
+#define I2C_IC_STATUS_TFNF_BITS (1u<<1)
+#define I2C_IC_DATA_CMD_STOP_BITS (1u<<9)

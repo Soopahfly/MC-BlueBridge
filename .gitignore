@@ -2,3 +2,6 @@ build/
 .vscode/
 .idea/
 deps/btstack/
+.build-tools/
+build-*/
+__pycache__/

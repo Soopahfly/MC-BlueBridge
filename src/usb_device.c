@@ -5,6 +5,7 @@
 #include "hid_feedback.h"
 #include "cdc_protocol.h"
 #include "bt_host.h"
+#include "control_panel.h"
 #include "pico/multicore.h"
 #include "pico/critical_section.h"
 #include "pico/stdlib.h"
@@ -292,6 +293,7 @@ void bb_usb_core1(void) {
     usb_lock_ready = true;
     if (bb_output_mode() == BB_OUTPUT_XBOX360) bb_xbox360_auth_init();
     tusb_init();
+    bb_panel_init();
     while (true) {
         if (bb_output_mode() == BB_OUTPUT_MISTER) {
             for (uint8_t i = 0; i < (bb_multi_mode() ? BB_MAX_SLOTS : 1); ++i) {
@@ -306,6 +308,7 @@ void bb_usb_core1(void) {
         handle_reenumeration();
         bb_usb_service_pending();
         bb_config_flush_pending();
+        bb_panel_poll();
         if (bb_mode_restart_pending()) {
             sleep_ms(300);
             watchdog_reboot(0, 0, 0);

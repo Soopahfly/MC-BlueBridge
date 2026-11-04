@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BlueBridge OLED configuration</title>
+<style>
+  :root { color-scheme:dark; font:16px/1.5 system-ui,sans-serif; background:#111820; color:#e6eef5 }
+  body { max-width:660px; margin:60px auto; padding:0 24px }
+  h1 { font-size:1.8rem } p { color:#b6c6d4 }
+  fieldset { border:1px solid #435667; border-radius:12px; padding:24px; margin:24px 0 }
+  label { display:block; margin:16px 0 6px }
+  select,button { font:inherit; padding:10px 14px; border-radius:6px; border:1px solid #73899a }
+  select { width:100%; background:#1c2a35; color:inherit }
+  button { cursor:pointer; background:#92d4ff; color:#102330; margin-right:8px }
+  button:disabled { opacity:.5; cursor:default }
+  input[type=checkbox] { width:20px; height:20px; vertical-align:middle; margin-right:8px }
+  #status { min-height:3em; white-space:pre-wrap } small { color:#b6c6d4 }
+</style>
+<h1>BlueBridge OLED</h1>
+<p>Configure the optional fire-button animation on your SSD1306 screen. Settings are saved per profile on the adapter.</p>
+<button id="connect">Connect adapter</button><button id="refresh" disabled>Refresh</button>
+<fieldset id="settings" disabled>
+  <legend>PEW PEW animation</legend>
+  <label for="controller">Controller</label><select id="controller"></select>
+  <label for="profile">Profile to edit</label><select id="profile"></select>
+  <label><input id="enabled" type="checkbox">Enable PEW PEW animation</label>
+  <label for="fire">Fire button</label><select id="fire"></select>
+  <p><small>This only changes the OLED animation. It does not remap your controller or activate the profile you are editing.</small></p>
+  <button id="save">Save to adapter</button>
+</fieldset>
+<p id="status" role="status" aria-live="polite">Use Chrome or Edge on a computer with the adapter connected by USB. Close other apps using its serial port.</p>
+<script type="module">
+const $ = id => document.getElementById(id);
+let port, reader, writer, reading, nextId = 0, pending = new Map(), busy = false;
+let loadedProfileId;
+const encoder = new TextEncoder();
+function status(message) { $('status').textContent = message; }
+function failPending(message) {
+  for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error(message)); }
+  pending.clear();
+}
+async function receive() {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    while (true) {
+      const {value,done} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value,{stream:true});
+      if (buffer.length > 65536) throw new Error('Unexpected serial response.');
+      let end;
+      while ((end = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0,end).trim(); buffer = buffer.slice(end+1);
+        const match = /^BB1\|([^|]+)\|(OK|ERR)\|(.*)$/.exec(line);
+        if (!match) continue;
+        const p = pending.get(match[1]);
+        if (!p) continue;
+        pending.delete(match[1]); clearTimeout(p.timer);
+        if (match[2] === 'ERR') p.reject(new Error(match[3]));
+        else {
+          try { p.resolve(JSON.parse(match[3])); }
+          catch { p.resolve(match[3]); }
+        }
+      }
+    }
+  } catch (error) { status(`Connection ended: ${error.message}`); }
+  finally {
+    reader.releaseLock();
+    failPending('Adapter disconnected.');
+    $('settings').disabled = true; $('refresh').disabled = true;
+    $('connect').disabled = false;
+  }
+}
+async function command(name,...args) {
+  const id = String(++nextId);
+  let resolve, reject;
+  const result = new Promise((yes,no) => { resolve=yes; reject=no; });
+  const timer = setTimeout(() => {
+    pending.delete(id); reject(new Error('Adapter did not reply. Check the firmware and USB mode.'));
+  },4000);
+  pending.set(id,{resolve,reject,timer});
+  // Attach rejection handling before the asynchronous write can fail or time out.
+  const write = writer.write(encoder.encode(['BB1',id,name,...args].join('|')+'\n'));
+  try { return (await Promise.all([result,write]))[0]; }
+  finally { clearTimeout(timer); pending.delete(id); }
+}
+function options(select,items) {
+  select.replaceChildren(...items.map(([value,label]) => new Option(label,String(value))));
+}
+async function loadProfile() {
+  const profile = await command('PROFILE_GET',$('profile').value);
+  loadedProfileId = profile.id;
+  $('enabled').checked = Boolean(profile.oled_pew_enabled);
+  $('fire').value = String(profile.oled_fire_button ?? 0);
+}
+async function loadProfiles() {
+  const data = await command('PROFILES');
+  options($('profile'),data.profiles.map(p => [p.index,p.name]));
+  $('profile').value = String(data.active);
+  options($('fire'),data.labels.map((label,index) => [index,label]));
+  await loadProfile();
+}
+async function refresh() {
+  const data = await command('CONTROLLERS');
+  options($('controller'),data.controllers.map(c => [c.index,c.name]));
+  if (!data.controllers.length) {
+    options($('profile'),[]); options($('fire'),[]);
+    $('settings').disabled = true;
+    status('No remembered controllers. Pair a controller, then press Refresh.');
+    return;
+  }
+  $('controller').value = String(data.selected_index);
+  await command('CONTROLLER_SELECT',$('controller').value);
+  await loadProfiles();
+  $('settings').disabled = false;
+  status('Ready. Select a profile, choose its animation settings, and save.');
+}
+async function run(action) {
+  if (busy) return;
+  busy = true;
+  $('settings').disabled = true; $('refresh').disabled = true;
+  let usable = true;
+  try { await action(); }
+  catch (error) { usable=false; status(error.message); }
+  finally {
+    busy=false;
+    $('settings').disabled = !usable || !$('profile').options.length || !port?.readable;
+    $('refresh').disabled = !port?.readable;
+  }
+}
+$('connect').onclick = async () => {
+  if (!('serial' in navigator)) { status('Web Serial is unavailable. Open this page in desktop Chrome or Edge at localhost.'); return; }
+  $('connect').disabled = true;
+  try {
+    if (port) {
+      if (reader) await reader.cancel().catch(()=>{});
+      if (reading) await reading;
+      if (writer) writer.releaseLock();
+      await port.close().catch(()=>{});
+    }
+    port = await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    writer = port.writable.getWriter(); reader = port.readable.getReader();
+    reading = receive();
+    const hello = await command('HELLO');
+    if (!hello.capabilities?.profile_oled) throw new Error('Install the OLED firmware before using this page.');
+    $('refresh').disabled = false;
+    await run(refresh);
+  } catch (error) { status(error.message); $('connect').disabled = false; }
+};
+$('refresh').onclick = () => run(refresh);
+$('controller').onchange = () => run(async () => {
+  await command('CONTROLLER_SELECT',$('controller').value); await loadProfiles();
+});
+$('profile').onchange = () => run(loadProfile);
+$('save').onclick = () => run(async () => {
+  // Recheck both targets; another management client/encoder may have changed them.
+  const controllers = await command('CONTROLLERS');
+  if (String(controllers.selected_index) !== $('controller').value)
+    throw new Error('Controller selection changed. Press Refresh before saving.');
+  const profile = await command('PROFILE_GET',$('profile').value);
+  if (profile.id !== loadedProfileId)
+    throw new Error('Profile changed. Press Refresh before saving.');
+  await command('PROFILE_OLED',$('profile').value,$('enabled').checked ? 1 : 0,$('fire').value);
+  status('Animation settings saved to the adapter.');
+});
+</script>
+</html>

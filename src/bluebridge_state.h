@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define BLUEBRIDGE_VERSION "1.0.2"
-#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=13"
+#define BLUEBRIDGE_VERSION "1.0.3-oled"
+#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=14"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
-#define BB_CONFIG_SCHEMA 13
+#define BB_CONFIG_SCHEMA 14
 #define BB_MAX_NAME 32
 #define BB_MAX_PROFILE_NAME 24
 #define BB_MAX_CONTROLLERS 8
@@ -106,8 +106,12 @@ typedef struct __attribute__((packed)) {
     uint8_t single_output_mode;
     uint8_t blocked_device_count;
     bb_blocked_device_t blocked_devices[BB_MAX_BLOCKED_DEVICES];
+    /* Appended to preserve the schema 8-13 binary layout. Bit 7 enables
+       PEW PEW; bits 0-4 select a canonical input button (0 = South). */
+    uint8_t oled_pew[BB_MAX_CONTROLLERS][BB_MAX_PROFILES];
 } bb_config_t;
 
+#define BB_CONFIG_V13_SIZE offsetof(bb_config_t, oled_pew)
 #define BB_CONFIG_V12_SIZE offsetof(bb_config_t, blocked_device_count)
 #define BB_CONFIG_V11_SIZE offsetof(bb_config_t, multi_controller)
 bool bb_multi_mode(void);
@@ -146,6 +150,7 @@ typedef struct {
     uint32_t usb_reports;
     uint32_t dropped_usb_reports;
     uint32_t raw_buttons;
+    uint32_t pew_events;
     uint32_t button_capabilities;
     int16_t raw_x;
     int16_t raw_y;
@@ -205,6 +210,8 @@ bool bb_profile_set_tuning(uint8_t profile_index, uint8_t invert_x, uint8_t inve
 bool bb_profile_set_macro(uint8_t profile_index, uint8_t macro_index, uint8_t enabled, const char* name, uint16_t output_mask);
 bool bb_profile_set_turbo_modifier(uint8_t profile_index, uint8_t modifier);
 bool bb_profile_set_turbo_control(uint8_t profile_index, uint8_t enabled, uint8_t mode, uint8_t button);
+bool bb_profile_set_oled(uint8_t profile_index, bool enabled, uint8_t button);
+uint8_t bb_profile_oled_get(uint8_t profile_index);
 bool bb_profile_set_separate_mapping(uint8_t profile_index);
 bool bb_profile_share_mapping(uint8_t profile_index, uint8_t target_index);
 bool bb_controller_forget(uint8_t index, uint8_t address_out[6]);
@@ -218,6 +225,7 @@ bool bb_controller_activate_or_create(const uint8_t address[6], uint16_t vendor_
 bool bb_controller_update_identity(uint8_t index, uint16_t vendor_id, uint16_t product_id, const char* name);
 bool bb_controller_select(uint8_t index);
 uint8_t bb_selected_controller_index(void);
+uint8_t bb_controller_count(void);
 bool bb_output_mode_set(bb_output_mode_t mode);
 uint16_t bb_current_mister_identity(void);
 bb_output_mode_t bb_output_mode(void);

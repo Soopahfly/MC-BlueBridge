@@ -76,6 +76,8 @@ typedef struct {
     bb_config_t cfg;
 } stored_cfg_t;
 
+_Static_assert(sizeof(stored_cfg_t) <= BB_CFG_STORAGE_SIZE, "Configuration exceeds reserved flash storage");
+
 typedef struct {
     uint8_t* sector;
 } flash_write_params_t;
@@ -153,6 +155,14 @@ bool bb_config_load(bb_config_t* cfg) {
         const bb_config_t* stored = (const bb_config_t*)payload;
         if (header->checksum != checksum_bytes(stored, sizeof(*stored))) return false;
         *cfg = *stored;
+        return true;
+    }
+    if (header->size == BB_CONFIG_V13_SIZE) {
+        uint32_t schema;
+        memcpy(&schema, payload, sizeof(schema));
+        if (schema != 13 || header->checksum != checksum_bytes(payload, header->size)) return false;
+        memset(cfg, 0, sizeof(*cfg));
+        memcpy(cfg, payload, header->size);
         return true;
     }
     if (header->size == BB_CONFIG_V12_SIZE) {

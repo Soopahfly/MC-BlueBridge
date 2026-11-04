@@ -6,6 +6,14 @@ Controllers connect to BlueBridge over Bluetooth, while BlueBridge presents them
 
 MC BlueBridge is free and open source.
 
+### OLED/encoder fork
+
+This fork adds a 128x64 SSD1306 I2C status display, rotary-encoder settings menu,
+and an optional per-profile OLED-only **PEW PEW** animation. See
+[OLED wiring, configuration and build instructions](docs/OLED.md).
+The companion applications are separate projects; a local USB configuration
+page for the animation checkbox is included in `tools/oled-config.html`.
+
 ## Features
 
 - Bluetooth Classic and Bluetooth Low Energy controller support

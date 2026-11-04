@@ -35,8 +35,6 @@ typedef struct {
 } bb_feedback_context_t;
 static bb_feedback_context_t feedback_slots[BB_MAX_SLOTS] = {
 {.device_gain=255,.enabled=true,.load_status=3},
-{.device_gain=255,.enabled=true,.load_status=3},
-{.device_gain=255,.enabled=true,.load_status=3},
 {.device_gain=255,.enabled=true,.load_status=3}
 };
 static uint8_t feedback_slot;

@@ -142,7 +142,7 @@ void bb_state_init(void) {
     }
     if (!bb_config_load(&config_state)) {
         init_defaults(&config_state);
-    } else if (config_state.schema == 8 || config_state.schema == 9 || config_state.schema == 10 || config_state.schema == 11 || config_state.schema == 12) {
+    } else if (config_state.schema >= 8 && config_state.schema <= 13) {
         config_state.schema = BB_CONFIG_SCHEMA;
         if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_XBOX360) config_state.output_mode = BB_OUTPUT_MISTER;
         config_save_pending = true;
@@ -241,6 +241,15 @@ void bb_state_update_button_capabilities(uint32_t buttons) {
 
 void bb_state_update_live_input(int16_t x, int16_t y, int16_t rx, int16_t ry, uint16_t lt, uint16_t rt, uint8_t dpad, uint32_t buttons) {
     critical_section_enter_blocking(&lock);
+    int ci = runtime_state.controller_index;
+    if (runtime_state.controller_connected && runtime_state.capture_mode == BB_CAPTURE_NONE &&
+        ci >= 0 && ci < config_state.controller_count) {
+        uint8_t pi = config_state.controllers[ci].active_profile;
+        uint8_t effect = pi < BB_MAX_PROFILES ? config_state.oled_pew[ci][pi] : 0;
+        uint8_t fire = effect & 31u;
+        if ((effect & 0x80u) && fire < BB_BUTTON_COUNT &&
+            (buttons & ~runtime_state.raw_buttons & (1u << fire))) ++runtime_state.pew_events;
+    }
     runtime_state.raw_x = x;
     runtime_state.raw_y = y;
     runtime_state.raw_rx = rx;
@@ -379,6 +388,13 @@ uint8_t bb_selected_controller_index(void) {
     return index;
 }
 
+uint8_t bb_controller_count(void) {
+    critical_section_enter_blocking(&lock);
+    uint8_t count = config_state.controller_count;
+    critical_section_exit(&lock);
+    return count;
+}
+
 void bb_active_controller_get(bb_controller_t* out, uint8_t* active_index) {
     critical_section_enter_blocking(&lock);
     uint8_t input_index = boot_multi && !get_core_num() ? input_controller_index_locked() : selected_controller_index_locked();
@@ -478,6 +494,8 @@ bool bb_profile_duplicate(uint8_t source_index, const char* name, uint8_t* out_i
         if (source_index < controller->profile_count && controller->profile_count < BB_MAX_PROFILES) {
             index = controller->profile_count++;
             controller->profiles[index] = controller->profiles[source_index];
+            unsigned ci = (unsigned)(controller - config_state.controllers);
+            config_state.oled_pew[ci][index] = config_state.oled_pew[ci][source_index];
             controller->profiles[index].id = config_state.next_profile_id++;
             controller->profiles[index].mister_identity = allocate_mister_identity_locked();
             controller->profiles[index].mister_mapping_mode = 0;
@@ -500,6 +518,7 @@ bool bb_profile_create(const char* name, uint8_t* out_index) {
         if (controller->profile_count < BB_MAX_PROFILES) {
             index = controller->profile_count++;
             init_profile(&controller->profiles[index], config_state.next_profile_id++, allocate_mister_identity_locked(), name);
+            config_state.oled_pew[controller - config_state.controllers][index] = 0;
             controller->profiles[index].mister_mapping_mode = 0;
             config_save_pending = true;
             ok = true;
@@ -531,6 +550,9 @@ bool bb_profile_delete(uint8_t index) {
     if (config_state.controller_count) {
         bb_controller_t* controller = selected_controller_locked();
         if (index > 0 && index < controller->profile_count) {
+            uint8_t* effects = config_state.oled_pew[controller - config_state.controllers];
+            for (uint8_t i = index; i + 1 < controller->profile_count; ++i) effects[i] = effects[i + 1];
+            effects[controller->profile_count - 1] = 0;
             for (uint8_t i = index; i + 1 < controller->profile_count; ++i) controller->profiles[i] = controller->profiles[i + 1];
             controller->profile_count--;
             if (controller->active_profile >= controller->profile_count) controller->active_profile = 0;
@@ -594,6 +616,31 @@ bool bb_profile_set_tuning(uint8_t profile_index, uint8_t invert_x, uint8_t inve
             config_save_pending = true;
             ok = true;
         }
+    }
+    critical_section_exit(&lock);
+    return ok;
+}
+
+uint8_t bb_profile_oled_get(uint8_t profile_index) {
+    uint8_t result = 0;
+    critical_section_enter_blocking(&lock);
+    bb_controller_t* c = selected_controller_locked();
+    if (c && profile_index < c->profile_count)
+        result = config_state.oled_pew[c - config_state.controllers][profile_index];
+    critical_section_exit(&lock);
+    return result;
+}
+
+bool bb_profile_set_oled(uint8_t profile_index, bool enabled, uint8_t button) {
+    if (button >= BB_BUTTON_COUNT) return false;
+    bool ok = false;
+    critical_section_enter_blocking(&lock);
+    bb_controller_t* c = selected_controller_locked();
+    if (c && profile_index < c->profile_count) {
+        uint8_t* value = &config_state.oled_pew[c - config_state.controllers][profile_index];
+        uint8_t next = button | (enabled ? 0x80u : 0);
+        if (*value != next) { *value = next; config_save_pending = true; }
+        ok = true;
     }
     critical_section_exit(&lock);
     return ok;
@@ -753,9 +800,11 @@ bool bb_controller_forget(uint8_t index, uint8_t address_out[6]) {
         if (address_out) memcpy(address_out, config_state.controllers[index].bluetooth_address, 6);
         for (uint8_t i = index; i + 1 < config_state.controller_count; ++i) {
             config_state.controllers[i] = config_state.controllers[i + 1];
+            memcpy(config_state.oled_pew[i], config_state.oled_pew[i + 1], BB_MAX_PROFILES);
             memcpy(config_state.controller_names[i], config_state.controller_names[i + 1], BB_MAX_NAME);
         }
         memset(config_state.controller_names[config_state.controller_count - 1], 0, BB_MAX_NAME);
+        memset(config_state.oled_pew[config_state.controller_count - 1], 0, BB_MAX_PROFILES);
         config_state.controller_count--;
         if (boot_multi) {
             for (unsigned slot = 0; slot < BB_MAX_SLOTS; ++slot) {
@@ -924,6 +973,7 @@ bool bb_controller_activate_or_create(const uint8_t address[6], uint16_t vendor_
         controller->native_product_id = product_id;
         set_name(controller->name, sizeof(controller->name), name, "Bluetooth Controller");
         memset(config_state.controller_names[index], 0, BB_MAX_NAME);
+        memset(config_state.oled_pew[index], 0, BB_MAX_PROFILES);
         controller->profile_count = 1;
         controller->active_profile = 0;
         uint16_t identity = allocate_mister_identity_locked();
@@ -1015,7 +1065,7 @@ const char* bb_output_mode_name(bb_output_mode_t mode) {
 }
 
 bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
-    if (!cfg || (cfg->schema != BB_CONFIG_SCHEMA && cfg->schema != 8 && cfg->schema != 9 && cfg->schema != 10 && cfg->schema != 11 && cfg->schema != 12) || bb_config_checksum(cfg) != checksum) return false;
+    if (!cfg || (cfg->schema < 8 || cfg->schema > BB_CONFIG_SCHEMA) || bb_config_checksum(cfg) != checksum) return false;
     if (cfg->controller_count > BB_MAX_CONTROLLERS) return false;
     if (cfg->controller_count && cfg->active_controller >= cfg->controller_count) return false;
     for (uint8_t i = 0; i < cfg->controller_count; ++i) {
@@ -1024,6 +1074,13 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     }
     bb_config_t value = *cfg;
     value.schema = BB_CONFIG_SCHEMA;
+    if (cfg->schema < 14) memset(value.oled_pew, 0, sizeof(value.oled_pew));
+    for (unsigned c = 0; c < BB_MAX_CONTROLLERS; ++c) {
+        for (unsigned p = 0; p < BB_MAX_PROFILES; ++p) {
+            uint8_t effect = value.oled_pew[c][p];
+            if ((effect & 0x60u) || (effect & 31u) >= BB_BUTTON_COUNT) return false;
+        }
+    }
     if (cfg->schema < 11) memset(value.adapter_name, 0, sizeof(value.adapter_name));
     if (cfg->schema < 13) { value.blocked_device_count = 0; memset(value.blocked_devices, 0, sizeof(value.blocked_devices)); }
     value.adapter_name[BB_MAX_NAME - 1] = 0;
