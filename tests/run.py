@@ -18,7 +18,9 @@ for name, sources in {
     "controls": ["tests/test_controls.c", "src/panel_controls.c"],
     "state": ["tests/test_state.c", "src/bluebridge_state.c", "src/config_store.c"],
     "oled": ["tests/test_oled.c"],
-    "panel": ["tests/test_panel.c", "src/panel_controls.c", "src/bluebridge_state.c", "src/config_store.c"],
+    "panel": ["tests/test_panel.c", "src/panel_controls.c", "src/oled_gamepad.c", "src/bluebridge_state.c", "src/config_store.c"],
+    "gamepad": ["tests/test_gamepad.c", "src/oled_gamepad.c"],
+    "turbo-display": ["tests/test_turbo_display.c", "src/controller_input.c", "src/bluebridge_state.c", "src/config_store.c"],
 }.items():
     exe = out / (name + (".exe" if os.name == "nt" else ""))
     subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-Itests/stubs", "-Isrc",

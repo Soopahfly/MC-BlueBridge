@@ -176,6 +176,8 @@ void bb_input_submit(const bb_input_state_t* state) {
         }
     }
     previous_inputs = state->buttons;
+    bb_state_update_turbo(profile.id, profile.turbo_enabled ?
+        (profile.turbo_control_mode == 0 ? runtime_turbo_mask : profile.turbo_mask) : 0);
     report.buttons = mapped;
     bb_state_update_gamepad(&report);
     if (suppress_output) {

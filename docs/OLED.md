@@ -1,9 +1,41 @@
 # SSD1306 OLED and rotary encoder
 
 This fork adds a 128x64 SSD1306 display over I2C and a rotary encoder with a
-push switch. The display shows USB output mode, connection/pairing state,
-the selected controller and profile, turbo configuration and battery percentage
-where available. It uses a compact uppercase ASCII font.
+push switch. The default screen shows live controller inputs. A simpler status
+screen shows the selected controller/profile, turbo configuration and battery
+percentage where available, without fixed branding, USB mode or a routine
+Connected label. Text uses a compact uppercase ASCII font.
+
+## Live controller screen
+
+The input display follows the behavior of
+[GP2040-CE's button layout screen](https://gp2040-ce.info/web-configurator/menu-pages/display-configuration/):
+buttons fill when pressed and a separate outer ring identifies turbo assignments.
+It is a C adaptation of that display concept with original controller geometry;
+the GP2040-CE C++ graphics framework is not included.
+
+Controller identification selects a PlayStation, Xbox, Nintendo/8BitDo or generic
+silhouette automatically. PlayStation uses cross/circle/square/triangle; Xbox uses
+A/B/X/Y; Nintendo uses B/A/Y/X in physical South/East/West/North positions.
+PlayStation sticks are symmetric; Xbox/Nintendo sticks are asymmetric. Common
+face buttons, shoulder/trigger inputs, D-pad directions, stick positions/clicks,
+and Select/Home/Start are visualized. Model-specific paddles and extra buttons
+are not drawn in this first version; a family layout is not an exact model replica.
+
+Highlights show physical normalized inputs before remapping. Turbo rings map
+the profile's output assignments back to physical buttons, including macro
+triggers. Modifier-selected turbo buttons use live runtime assignments. Rings
+remain visible when a button is released or a toggle/hold gate is inactive;
+they mean assigned to turbo, not currently emitting a pulse. Disabled turbo and
+two-controller mode remove the rings.
+
+The profile name appears below the controller. Display Screen in the menu
+switches between Live Controller and Status for the current boot; live view is
+the startup default. PEW PEW temporarily takes over either screen and then
+restores it. Pairing/waiting messages appear when no selected controller is
+connected. Pictures are capped at 20 frames/second while input changes, and
+unchanged framebuffer pages still generate no I2C traffic. Unlike a status-only
+screen, the live input view intentionally generates display traffic during play.
 
 ## Default wiring
 
@@ -58,6 +90,7 @@ Menu settings:
 | Fire button | Choose which canonical input button triggers the animation. |
 | Pairing | Start or stop pairing. Starting is refused if both slots are occupied. |
 | Controller mode | Choose single/two controllers. Applying saves and restarts the adapter. |
+| Display screen | Choose Live Controller or Status for the current boot. |
 
 Existing turbo semantics are preserved: modifier mode selects turbo outputs
 using modifier+button presses at runtime. Toggle/hold modes use the saved turbo
@@ -73,8 +106,9 @@ be edited for remembered controllers while disconnected.
 The animation is **off by default**, stored per controller/profile, and has no
 effect on gamepad output. It watches the chosen input button before remapping,
 not a game-specific fire action. The default trigger is South (canonical input 0).
-Actual press edges trigger a four-frame, 400 ms `PEW PEW!`/laser animation in the
-bottom two display rows. Held buttons and generated turbo pulses do not retrigger
+Actual press edges trigger a 400 ms full-screen comic burst: `PEW` at top centre,
+then a tilted `PEW` at left and another at right. There is no character or mascot;
+the normal status screen returns afterwards. Held buttons and generated turbo pulses do not retrigger
 it. New effects start at most once every 750 ms; the menu takes priority. Button
 capture/tester mode suppresses new effects.
 
@@ -169,10 +203,9 @@ Export a backup before flashing; older firmware will not understand schema 14.
   wiring. Encoder operation remains independent of display detection.
 - Bluetooth callbacks never draw or perform I2C transfers.
 
-In the validated Release builds, enabling the panel adds **6,560 bytes of code/
-read-only data and 3,996 bytes of static RAM** compared with the same fork built
-with `BB_ENABLE_OLED=OFF`. These figures exclude transient stack use and are not
-a latency measurement.
+Memory footprint depends on the selected build and includes the live controller
+renderer. Compare `arm-none-eabi-size` output for panel-enabled and disabled
+builds; those figures exclude transient stack use and are not a latency measurement.
 
 ## Validation and hardware bring-up
 

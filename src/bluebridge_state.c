@@ -233,6 +233,13 @@ void bb_state_update_raw_buttons(uint32_t buttons) {
     critical_section_exit(&lock);
 }
 
+void bb_state_update_turbo(uint32_t profile_id, uint16_t assignments) {
+    critical_section_enter_blocking(&lock);
+    runtime_state.turbo_profile_id=profile_id;
+    runtime_state.turbo_assignments=assignments;
+    critical_section_exit(&lock);
+}
+
 void bb_state_update_button_capabilities(uint32_t buttons) {
     critical_section_enter_blocking(&lock);
     runtime_state.button_capabilities = buttons;

@@ -103,7 +103,7 @@ add_executable(mc_bluebridge
 
 target_compile_definitions(mc_bluebridge PRIVATE BB_ENABLE_OLED=$<BOOL:${BB_ENABLE_OLED}>)
 if(BB_ENABLE_OLED)
-  target_sources(mc_bluebridge PRIVATE src/oled_display.c src/panel_controls.c)
+  target_sources(mc_bluebridge PRIVATE src/oled_display.c src/oled_gamepad.c src/panel_controls.c)
   target_link_libraries(mc_bluebridge PRIVATE hardware_i2c)
   foreach(setting BB_OLED_I2C BB_OLED_SDA BB_OLED_SCL BB_OLED_ADDRESS BB_ENCODER_A BB_ENCODER_B BB_ENCODER_SW BB_ENCODER_STEPS)
     target_compile_definitions(mc_bluebridge PRIVATE ${setting}=${${setting}})

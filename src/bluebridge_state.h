@@ -151,6 +151,8 @@ typedef struct {
     uint32_t dropped_usb_reports;
     uint32_t raw_buttons;
     uint32_t pew_events;
+    uint32_t turbo_profile_id;
+    uint16_t turbo_assignments;
     uint32_t button_capabilities;
     int16_t raw_x;
     int16_t raw_y;
@@ -177,6 +179,7 @@ void bb_state_set_bt_ready(bool ready);
 void bb_state_set_usb_ready(bool ready);
 void bb_state_update_gamepad(const bb_gamepad_report_t* report);
 void bb_state_update_raw_buttons(uint32_t buttons);
+void bb_state_update_turbo(uint32_t profile_id, uint16_t assignments);
 void bb_state_update_button_capabilities(uint32_t buttons);
 void bb_state_update_live_input(int16_t x, int16_t y, int16_t rx, int16_t ry, uint16_t lt, uint16_t rt, uint8_t dpad, uint32_t buttons);
 void bb_state_update_battery(bool supported, uint8_t percent, uint8_t state);

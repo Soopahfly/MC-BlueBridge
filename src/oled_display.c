@@ -14,6 +14,7 @@ static uint32_t started;
 static bool available, busy, initializing;
 static bool valid[8];
 static char previous[8][22];
+static int pew_frame = -1;
 
 /* Original compact 5x7 glyphs, columns with bit 0 at the top. */
 static const uint8_t letters[26][5] = {
@@ -56,6 +57,10 @@ static void glyph(char value, uint8_t out[5]) {
 }
 
 void bb_oled_text(const char rows[8][22]) {
+    if (pew_frame >= 0) {
+        memset(previous, 0xff, sizeof(previous));
+        pew_frame = -1;
+    }
     for (unsigned page = 0; page < 8; ++page) {
         if (!memcmp(previous[page], rows[page], 22)) continue;
         memcpy(previous[page], rows[page], 22);
@@ -63,6 +68,47 @@ void bb_oled_text(const char rows[8][22]) {
         for (unsigned c = 0; c < 21 && rows[page][c]; ++c)
             glyph(rows[page][c], desired + page * 128 + c * 6);
     }
+}
+
+uint8_t* bb_oled_graphics_begin(void) {
+    memset(previous,0xff,sizeof(previous));
+    pew_frame=-1;
+    return desired;
+}
+void bb_oled_graphics_footer(const char* text) {
+    memset(desired+7*128,0,128);
+    for(unsigned c=0;c<21&&text[c];c++)glyph(text[c],desired+7*128+c*6);
+}
+
+static void pew_word(int cx, int cy, int sine) {
+    /* Inverse-map a doubled 5x7 font. Fixed-point rotation avoids floating
+     * point and keeps the two side words tilted like comic sound effects. */
+    const char* word = "PEW";
+    int cosine = sine ? 94 : 100;
+    for (int dy = -14; dy <= 14; ++dy) {
+        for (int dx = -22; dx <= 22; ++dx) {
+            int sx = (dx * cosine + dy * sine + 1700) / 100;
+            int sy = (-dx * sine + dy * cosine + 600) / 100;
+            if (sx < 0 || sx >= 34 || sy < 0 || sy >= 14) continue;
+            unsigned column = (unsigned)sx / 2;
+            unsigned letter = column / 6;
+            unsigned gx = column % 6;
+            if (gx >= 5 || !(letters[word[letter]-'A'][gx] & (1u << (sy/2)))) continue;
+            int x = cx + dx, y = cy + dy;
+            if (x >= 0 && x < 128 && y >= 0 && y < 64)
+                desired[(unsigned)y/8*128+(unsigned)x] |= (uint8_t)(1u << (y%8));
+        }
+    }
+}
+
+void bb_oled_pew(uint8_t frame) {
+    if (frame > 3) frame = 3;
+    if (pew_frame == frame) return;
+    pew_frame = frame;
+    memset(desired, 0, sizeof(desired));
+    pew_word(64, 10, 0);
+    if (frame >= 1) pew_word(24, 33, -34);
+    if (frame >= 2) pew_word(104, 33, 34);
 }
 
 static i2c_inst_t* bus(void) { return BB_OLED_I2C ? i2c1 : i2c0; }

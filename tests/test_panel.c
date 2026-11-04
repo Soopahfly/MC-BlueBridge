@@ -13,10 +13,15 @@ uint32_t test_time;
 bool test_gpio[30];
 uint8_t test_flash[PICO_FLASH_SIZE_BYTES];
 static unsigned reenumerations;
+static unsigned pew_draws;
+static uint8_t picture[1024];
 void bb_oled_init(void) {}
 void bb_oled_poll(uint32_t now) { (void)now; }
 bool bb_oled_available(void) { return true; }
 void bb_oled_text(const char lines[8][22]) { (void)lines; }
+void bb_oled_pew(uint8_t frame) { (void)frame; ++pew_draws; }
+uint8_t* bb_oled_graphics_begin(void) { return picture; }
+void bb_oled_graphics_footer(const char* text) { snprintf(rows[7],22,"%s",text); }
 void bb_usb_request_reenumeration(void) { ++reenumerations; }
 void bb_led_signal_profile_changed(void) {}
 bool bb_bt_host_pairing_available(void) { return true; }
@@ -43,7 +48,7 @@ int main(void) {
     assert(bb_controller_activate_or_create(address,1,2,"Test pad",&ci));
     bb_state_set_controller(true,0,"Test pad");
     bb_panel_init();
-    assert(strstr(rows[1],"MiSTer"));
+    assert(!strstr(rows[0],"BLUEBRIDGE"));
     item=USB_MODE; menu=true; begin_edit(); rotate(1);
     assert(value==1 && bb_output_mode()==BB_OUTPUT_MISTER && reenumerations==0);
     apply(); assert(bb_output_mode()==BB_OUTPUT_XINPUT && reenumerations==1);
@@ -59,12 +64,23 @@ int main(void) {
     item=TURBO_RATE; begin_edit();
     assert(bb_profile_select(0)); snapshot(); assert(!editing); /* External edit cancels stale preview. */
     menu=false; raw(0); raw(1); tick();
-    assert(pew_active && strstr(rows[6],"PEW PEW!"));
+    assert(pew_active && pew_draws==1);
     raw(1); test_time+=400; tick(); assert(!pew_active);
     raw(0); raw(1); tick(); assert(!pew_active); /* Rate limited. */
     test_time+=400; raw(0); raw(1); tick(); assert(pew_active);
     menu=true; tick(); assert(!pew_active); /* Menu takes priority. */
     item=PAIR; begin_edit(); apply(); snapshot(); assert(runtime.pairing);
+    item=DISPLAY; begin_edit(); assert(value==1); rotate(1); apply(); snapshot();
+    assert(!live_screen); menu=false; tick();
+    assert(strstr(rows[0],"Test pad") && !strstr(rows[0],"BLUEBRIDGE"));
+    assert(!strstr(rows[1],"USB:"));
+    assert(bb_profile_set_turbo_control(0,true,1,13));
+    bb_profile_t p; bb_active_profile_get(&p);
+    assert(bb_profile_set_tuning(0,p.invert_x,p.invert_y,p.invert_rx,p.invert_ry,p.deadzone_left,p.deadzone_right,p.trigger_deadzone,12,1u<<2));
+    assert(bb_profile_set_mapping(0,0,2));
+    live_screen=true; snapshot(); test_time+=60; draw(test_time);
+    /* Turbo output West maps back to the physical South button's outer ring. */
+    assert(picture[40/8*128+110]&(1u<<(40%8)));
 
     /* Reboot into multi-controller mode and check mode/turbo restrictions. */
     assert(bb_multi_mode_set(true)); bb_config_flush_pending(); bb_state_init();
