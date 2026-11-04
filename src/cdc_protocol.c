@@ -19,6 +19,7 @@
 #define BB_CDC_LINE_MAX 2048
 #define BB_IMPORT_CHUNK_MAX 128
 
+/* CDC commands run serially on core 1. Large scratch buffers must stay off-stack. */
 static char line[BB_CDC_LINE_MAX];
 static size_t used;
 static bool adapter_rename_reenumeration_pending;
@@ -53,7 +54,7 @@ static void write_text(const char* text) {
 }
 
 static void send_result(const char* id, const char* status, const char* payload) {
-    char out[4096];
+    static char out[4096];
     snprintf(out, sizeof(out), "BB1|%s|%s|%s\n", id && id[0] ? id : "0", status, payload ? payload : "");
     write_text(out);
 }
@@ -74,7 +75,7 @@ static void send_status(const char* id) {
     bb_active_profile_get(&profile);
     uint8_t active_profile = bb_active_profile_index();
     uint8_t output_mode = bb_output_mode_value();
-    char out[1024];
+    static char out[1024];
     snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"bt_ready\":%s,\"usb_ready\":%s,\"controller_connected\":%s,\"pairing\":%s,\"controller\":\"%s\",\"controller_index\":%d,\"active_profile\":%u,\"profile\":\"%s\",\"output_mode\":%u,\"output\":\"%s\",\"bt_reports\":%lu,\"usb_reports\":%lu,\"dropped_usb_reports\":%lu,\"raw_buttons\":%lu,\"button_capabilities\":%lu,\"battery_supported\":%s,\"battery_percent\":%u,\"battery_state\":%u,\"rumble_supported\":%s,\"capture_mode\":%u,\"xbox360_authenticated\":%s}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, state.bt_ready ? "true" : "false", state.usb_ready ? "true" : "false", state.controller_connected ? "true" : "false", state.pairing ? "true" : "false", state.controller_name, state.controller_index, active_profile, profile.name, output_mode, bb_output_mode_name((bb_output_mode_t)output_mode), (unsigned long)state.bt_reports, (unsigned long)state.usb_reports, (unsigned long)state.dropped_usb_reports, (unsigned long)state.raw_buttons, (unsigned long)state.button_capabilities, state.battery_supported ? "true" : "false", state.battery_percent, state.battery_state, state.rumble_supported ? "true" : "false", state.capture_mode, bb_xbox360_authenticated() ? "true" : "false");
     size_t pos = strlen(out);
     if (pos && out[pos - 1] == '}') {
@@ -115,9 +116,9 @@ static bool parse_address(const char* text, uint8_t out[6]) {
 }
 
 static void send_blocked_devices(const char* id) {
-    bb_blocked_device_t entries[BB_MAX_BLOCKED_DEVICES];
+    static bb_blocked_device_t entries[BB_MAX_BLOCKED_DEVICES];
     uint8_t count = bb_blocked_devices_get(entries, BB_MAX_BLOCKED_DEVICES);
-    char out[2048];
+    static char out[2048];
     size_t pos = (size_t)snprintf(out, sizeof(out), "{\"blocked_devices\":[");
     for (uint8_t i = 0; i < count && pos + 120 < sizeof(out); ++i) {
         char address[18];
@@ -129,11 +130,11 @@ static void send_blocked_devices(const char* id) {
 }
 
 static void send_controllers(const char* id) {
-    bb_config_t cfg;
+    static bb_config_t cfg;
     bb_runtime_state_t runtime;
     bb_config_get(&cfg);
     bb_state_get(&runtime);
-    char out[4096];
+    static char out[4096];
     size_t pos = 0;
     pos += (size_t)snprintf(out + pos, sizeof(out) - pos, "{\"active\":%u,\"connected_index\":%d,\"controllers\":[", bb_selected_controller_index(), runtime.controller_connected ? runtime.controller_index : -1);
     for (uint8_t i = 0; i < cfg.controller_count && pos + 420 < sizeof(out); ++i) {
@@ -150,7 +151,7 @@ static void send_controllers(const char* id) {
 }
 
 static void send_profiles(const char* id) {
-    bb_controller_t controller_value;
+    static bb_controller_t controller_value;
     uint8_t controller_index = 0;
     bb_active_controller_get(&controller_value, &controller_index);
     const bb_controller_t* controller = &controller_value;
@@ -167,7 +168,7 @@ static void send_profiles(const char* id) {
         bb_state_get(&runtime);
         if (runtime.controller_connected && runtime.controller_index == controller_index && runtime.button_capabilities) caps.buttons = runtime.button_capabilities & ~(1u << 13);
     }
-    char out[2048];
+    static char out[2048];
     size_t pos = 0;
     pos += (size_t)snprintf(out + pos, sizeof(out) - pos, "{\"controller_index\":%u,\"controller_id\":%lu,\"controller_name\":\"%s\",\"kind\":%u,\"kind_name\":\"%s\",\"native_vid\":%u,\"native_pid\":%u,\"active\":%u,\"capabilities\":{\"buttons\":%lu,\"dpad\":%s,\"left_stick\":%s,\"right_stick\":%s,\"left_trigger\":%s,\"right_trigger\":%s},\"labels\":[", controller_index, (unsigned long)controller->id, display, (unsigned)kind, bb_controller_kind_name(kind), controller->native_vendor_id, controller->native_product_id, controller->active_profile, (unsigned long)caps.buttons, caps.dpad ? "true" : "false", caps.left_stick ? "true" : "false", caps.right_stick ? "true" : "false", caps.left_trigger ? "true" : "false", caps.right_trigger ? "true" : "false");
     for (uint8_t i = 0; i < BB_BUTTON_COUNT; ++i) pos += (size_t)snprintf(out + pos, sizeof(out) - pos, "%s\"%s\"", i ? "," : "", bb_controller_button_label(kind, controller->name, i));
@@ -182,7 +183,7 @@ static void send_profiles(const char* id) {
 }
 
 static void send_profile(const char* id, uint8_t index) {
-    bb_controller_t controller_value;
+    static bb_controller_t controller_value;
     bb_active_controller_get(&controller_value, NULL);
     const bb_controller_t* controller = &controller_value;
     if (!controller->profile_count || index >= controller->profile_count) {
@@ -191,7 +192,7 @@ static void send_profile(const char* id, uint8_t index) {
     }
     const bb_profile_t* p = &controller->profiles[index];
     int shared = shared_with_index(controller, index);
-    char out[2048];
+    static char out[2048];
     size_t pos = (size_t)snprintf(out, sizeof(out), "{\"index\":%u,\"id\":%lu,\"name\":\"%s\",\"mister_identity\":%u,\"mapping_mode\":\"%s\",\"shared_with\":%d,\"invert_x\":%s,\"invert_y\":%s,\"invert_rx\":%s,\"invert_ry\":%s,\"deadzone_left\":%u,\"deadzone_right\":%u,\"trigger_deadzone\":%u,\"turbo_rate_hz\":%u,\"turbo_modifier\":%u,\"turbo_enabled\":%s,\"turbo_control_mode\":%u,\"turbo_control_button\":%u,\"turbo_mask\":%u,\"map\":[", index, (unsigned long)p->id, p->name, p->mister_identity, shared >= 0 ? "shared" : "separate", shared, p->invert_x ? "true" : "false", p->invert_y ? "true" : "false", p->invert_rx ? "true" : "false", p->invert_ry ? "true" : "false", p->deadzone_left, p->deadzone_right, p->trigger_deadzone, p->turbo_rate_hz, p->turbo_modifier, p->turbo_enabled ? "true" : "false", p->turbo_control_mode, p->turbo_control_button, p->turbo_mask);
     for (uint8_t i = 0; i < BB_BUTTON_COUNT && pos + 8 < sizeof(out); ++i) pos += (size_t)snprintf(out + pos, sizeof(out) - pos, "%s%u", i ? "," : "", p->button_map[i]);
     pos += (size_t)snprintf(out + pos, sizeof(out) - pos, "],\"macros\":[");
@@ -235,7 +236,7 @@ static void send_export(const char* id) {
     for (size_t offset = 0; offset < sizeof(export_cfg); offset += BB_IMPORT_CHUNK_MAX) {
         size_t count = sizeof(export_cfg) - offset;
         if (count > BB_IMPORT_CHUNK_MAX) count = BB_IMPORT_CHUNK_MAX;
-        char out[2 * BB_IMPORT_CHUNK_MAX + 96];
+        static char out[2 * BB_IMPORT_CHUNK_MAX + 96];
         int pos = snprintf(out, sizeof(out), "BB1|%s|DATA|%u|", id, (unsigned)offset);
         for (size_t i = 0; i < count; ++i) pos += snprintf(out + pos, sizeof(out) - (size_t)pos, "%02X", bytes[offset + i]);
         snprintf(out + pos, sizeof(out) - (size_t)pos, "\n");
@@ -267,7 +268,7 @@ static void handle_command(char* text) {
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
     if(!strcmp(cmd,"PANEL_GET")){
-        char out[320];bb_panel_input_t selected=bb_panel_input_get(),active=bb_panel_input_current();
+        static char out[320];bb_panel_input_t selected=bb_panel_input_get(),active=bb_panel_input_current();
         bool enabled=bb_oled_enabled_get(),current=bb_oled_enabled_current();
         snprintf(out,sizeof(out),"{\"input\":\"%s\",\"active_input\":\"%s\",\"restart_required\":%s,\"panel_compiled\":%s,\"oled_enabled\":%s,\"active_oled_enabled\":%s,\"trackball_ready\":%s}",
             bb_panel_input_name(selected),bb_panel_input_name(active),(selected!=active||enabled!=current)?"true":"false",
@@ -283,7 +284,7 @@ static void handle_command(char* text) {
         else if(strcmp(value,"none")){send_err(id,"panel_input");return;}
         if(!BB_ENABLE_OLED&&(input!=BB_PANEL_NONE||(display&&enabled))){send_err(id,"panel_not_compiled");return;}
         if(!bb_panel_settings_set(input,enabled)){send_err(id,"panel_input");return;}
-        char out[128];snprintf(out,sizeof(out),"{\"input\":\"%s\",\"restart_required\":%s}",
+        static char out[128];snprintf(out,sizeof(out),"{\"input\":\"%s\",\"restart_required\":%s}",
             bb_panel_input_name(input),(input!=bb_panel_input_current()||enabled!=bb_oled_enabled_current())?"true":"false");
         send_ok(id,out);return;
     }
@@ -304,7 +305,7 @@ static void handle_command(char* text) {
     }
 
     if (!strcmp(cmd, "HELLO")) {
-        char out[768], adapter_name[BB_MAX_NAME], custom_name[BB_MAX_NAME];
+        static char out[768], adapter_name[BB_MAX_NAME], custom_name[BB_MAX_NAME];
         char adapter_id[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
         bb_adapter_name_get(adapter_name, sizeof(adapter_name));
         bb_adapter_custom_name_get(custom_name, sizeof(custom_name));
@@ -325,7 +326,7 @@ static void handle_command(char* text) {
         return;
     }
     if (!strcmp(cmd, "BT_DIAGNOSTICS")) {
-        char out[1024];
+        static char out[1024];
         char* value = next_field(&cursor);
         char* end = NULL;
         long slot = value ? strtol(value, &end, 10) : -1;
@@ -337,13 +338,13 @@ static void handle_command(char* text) {
     if (!strcmp(cmd, "HID_DIAGNOSTICS")) {
         char* value = next_field(&cursor);
         long offset = value ? strtol(value, NULL, 10) : 0;
-        char out[1024];
+        static char out[1024];
         if (offset < 0 || offset > 65535 || !bb_driver_hid_diagnostics((uint16_t)offset, out, sizeof(out))) send_err(id, "hid_offset");
         else send_ok(id, out);
         return;
     }
     if (!strcmp(cmd, "MODE_GET")) {
-        char out[192];
+        static char out[192];
         snprintf(out, sizeof(out), "{\"multi_controller\":%s,\"max_connected\":%u,\"mister_only\":%s}", bb_multi_mode() ? "true" : "false", bb_multi_mode() ? BB_MAX_SLOTS : 1, bb_multi_mode() ? "true" : "false");
         send_ok(id, out);
         return;
@@ -391,7 +392,7 @@ static void handle_command(char* text) {
         char* name = next_field(&cursor);
         uint8_t address[6];
         if (!parse_address(value, address)) { send_err(id, "device_id"); return; }
-        bb_config_t cfg;
+        static bb_config_t cfg;
         bb_config_get(&cfg);
         int controller_index = -1;
         for (uint8_t i = 0; i < cfg.controller_count; ++i) if (memcmp(cfg.controllers[i].bluetooth_address, address, 6) == 0) { controller_index = i; break; }
@@ -443,7 +444,7 @@ static void handle_command(char* text) {
     if (!strcmp(cmd, "CAPTURE_STATUS")) {
         bb_runtime_state_t state;
         bb_state_get(&state);
-        char out[768];
+        static char out[768];
         snprintf(out, sizeof(out), "{\"mode\":%u,\"ready\":%s,\"button\":%u,\"buttons\":%lu,\"dpad\":%u,\"x\":%d,\"y\":%d,\"rx\":%d,\"ry\":%d,\"lt\":%u,\"rt\":%u,\"battery_supported\":%s,\"battery_percent\":%u,\"battery_state\":%u,\"rumble_supported\":%s,\"output\":{\"buttons\":%u,\"hat\":%u,\"x\":%d,\"y\":%d,\"rx\":%d,\"ry\":%d,\"lt\":%u,\"rt\":%u}}", state.capture_mode, state.capture_ready ? "true" : "false", state.captured_button, (unsigned long)state.raw_buttons, state.raw_dpad, state.raw_x, state.raw_y, state.raw_rx, state.raw_ry, state.raw_lt, state.raw_rt, state.battery_supported ? "true" : "false", state.battery_percent, state.battery_state, state.rumble_supported ? "true" : "false", state.report.buttons, state.report.hat, state.report.x, state.report.y, state.report.rx, state.report.ry, state.report.lt, state.report.rt);
         send_ok(id, out);
         return;
@@ -474,7 +475,7 @@ static void handle_command(char* text) {
         uint8_t index = 0;
         if (!a || !bb_profile_duplicate((uint8_t)atoi(a), name, &index)) send_err(id, "profile_limit");
         else {
-            char out[48];
+            static char out[48];
             snprintf(out, sizeof(out), "{\"index\":%u}", index);
             send_ok(id, out);
         }
@@ -485,7 +486,7 @@ static void handle_command(char* text) {
         const char* name = cursor && cursor[0] ? cursor : "Profile";
         if (!bb_profile_create(name, &index)) send_err(id, "profile_limit");
         else {
-            char out[48];
+            static char out[48];
             snprintf(out, sizeof(out), "{\"index\":%u}", index);
             send_ok(id, out);
         }
@@ -601,7 +602,7 @@ static void handle_command(char* text) {
         return;
     }
     if (!strcmp(cmd, "OUTPUT_GET")) {
-        char out[96];
+        static char out[96];
         bb_output_mode_t mode = bb_output_mode();
         snprintf(out, sizeof(out), "{\"mode\":%u,\"name\":\"%s\"}", (unsigned)mode, bb_output_mode_name(mode));
         send_ok(id, out);

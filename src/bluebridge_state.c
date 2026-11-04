@@ -403,6 +403,21 @@ void bb_config_get(bb_config_t* out) {
     critical_section_exit(&lock);
 }
 
+void bb_input_config_get(bb_input_config_t* out) {
+    critical_section_enter_blocking(&lock);
+    uint8_t index = input_controller_index_locked();
+    bb_controller_t* c = index < config_state.controller_count ? &config_state.controllers[index] : NULL;
+    memset(out, 0, sizeof(*out));
+    if (c) {
+        out->vendor_id = c->native_vendor_id;
+        out->product_id = c->native_product_id;
+        memcpy(out->name, c->name, sizeof(out->name));
+    }
+    if (c && c->profile_count && c->active_profile < c->profile_count) out->profile = c->profiles[c->active_profile];
+    else init_profile(&out->profile, 0, 1, "Default");
+    critical_section_exit(&lock);
+}
+
 void bb_active_profile_get(bb_profile_t* out) {
     critical_section_enter_blocking(&lock);
     bb_controller_t* controller = NULL;
@@ -1117,7 +1132,9 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
         if (cfg->controllers[i].profile_count == 0 || cfg->controllers[i].profile_count > BB_MAX_PROFILES) return false;
         if (cfg->controllers[i].active_profile >= cfg->controllers[i].profile_count) return false;
     }
-    bb_config_t value = *cfg;
+    /* Import/reset are serialized management operations on core 1. */
+    static bb_config_t value;
+    value = *cfg;
     value.schema = BB_CONFIG_SCHEMA;
     if(cfg->schema<16)value.oled_enabled=1;
     if(value.oled_enabled>1)return false;
@@ -1153,7 +1170,7 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
 }
 
 bool bb_config_reset(void) {
-    bb_config_t fresh;
+    static bb_config_t fresh;
     init_defaults(&fresh);
     if (boot_multi) mode_restart = true;
     if(boot_panel_input!=BB_PANEL_NONE)mode_restart=true;
@@ -1161,3 +1178,4 @@ bool bb_config_reset(void) {
     bb_config_set(&fresh, true);
     return true;
 }
+

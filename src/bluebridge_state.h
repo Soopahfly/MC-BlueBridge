@@ -204,6 +204,12 @@ void bb_capture_clear_result(void);
 void bb_state_get(bb_runtime_state_t* out);
 void bb_state_get_slot(uint8_t slot, bb_runtime_state_t* out);
 void bb_config_get(bb_config_t* out);
+typedef struct {
+    bb_profile_t profile;
+    uint16_t vendor_id, product_id;
+    char name[BB_MAX_NAME];
+} bb_input_config_t;
+void bb_input_config_get(bb_input_config_t* out);
 void bb_active_profile_get(bb_profile_t* out);
 void bb_active_controller_get(bb_controller_t* out, uint8_t* active_index);
 uint8_t bb_active_profile_index(void);

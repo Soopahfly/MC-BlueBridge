@@ -177,3 +177,9 @@ target_link_libraries(mc_bluebridge PUBLIC
 pico_enable_stdio_usb(mc_bluebridge 0)
 pico_enable_stdio_uart(mc_bluebridge 0)
 pico_add_extra_outputs(mc_bluebridge)
+
+# Both stacks occupy their dedicated 4 KiB scratch bank. Fail on new large
+# project-owned frames; .su files also support the checked stack audit.
+target_compile_definitions(mc_bluebridge PRIVATE PICO_STACK_SIZE=0x1000 PICO_CORE1_STACK_SIZE=0x1000)
+set_source_files_properties(src/cdc_protocol.c src/controller_input.c src/bluebridge_state.c
+    src/control_panel.c PROPERTIES COMPILE_OPTIONS "-fstack-usage;-Werror=frame-larger-than=1024")

@@ -82,8 +82,9 @@ void bb_input_submit(const bb_input_state_t* state) {
         bb_usb_submit(&neutral);
         return;
     }
-    bb_profile_t profile;
-    bb_active_profile_get(&profile);
+    bb_input_config_t config;
+    bb_input_config_get(&config);
+    bb_profile_t profile = config.profile;
     if (bb_multi_mode()) {
         profile.turbo_enabled = 0;
         profile.turbo_rate_hz = 0;
@@ -114,9 +115,15 @@ void bb_input_submit(const bb_input_state_t* state) {
     report.ry = axis_to_i8(ry);
     uint16_t lt = apply_trigger_deadzone(state->lt, profile.trigger_deadzone);
     uint16_t rt = apply_trigger_deadzone(state->rt, profile.trigger_deadzone);
-    bb_controller_t controller;
-    bb_active_controller_get(&controller, NULL);
-    bb_controller_kind_t kind = bb_controller_identify(controller.native_vendor_id, controller.native_product_id, controller.name);
+    /* Identification changes only when the connected identity changes. */
+    static uint16_t cached_vid, cached_pid;
+    static char cached_name[BB_MAX_NAME];
+    static bb_controller_kind_t kind;
+    if (cached_vid != config.vendor_id || cached_pid != config.product_id || memcmp(cached_name, config.name, sizeof(cached_name))) {
+        cached_vid = config.vendor_id; cached_pid = config.product_id;
+        memcpy(cached_name, config.name, sizeof(cached_name));
+        kind = bb_controller_identify(cached_vid, cached_pid, cached_name);
+    }
     uint8_t right_trigger_input = kind == BB_CONTROLLER_NSO_N64 ? 10 : 7;
     report.hat = bb_hat_from_dpad(state->dpad);
     uint16_t mapped = 0;
