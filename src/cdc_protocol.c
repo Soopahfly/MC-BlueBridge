@@ -268,12 +268,13 @@ static void handle_command(char* text) {
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
     if(!strcmp(cmd,"USB_QUEUE")) {
+        static char out[512];
+        size_t pos=(size_t)snprintf(out,sizeof(out),"{\"slots\":[");
         for(uint8_t slot=0;slot<(bb_multi_mode()?BB_MAX_SLOTS:1);++slot) {
             bb_usb_queue_stats_t stats;bb_usb_queue_stats(slot,&stats);
-            char out[256];
-            snprintf(out,sizeof(out),"{\"slot\":%u,\"depth\":%u,\"high_water\":%u,\"overflows\":%lu,\"oldest_age_ms\":%lu,\"max_age_ms\":%lu}",slot,stats.depth,stats.high_water,(unsigned long)stats.overflows,(unsigned long)stats.oldest_age_ms,(unsigned long)stats.max_age_ms);
-            send_ok(id,out);
-        }return;
+            pos+=(size_t)snprintf(out+pos,sizeof(out)-pos,"%s{\"slot\":%u,\"depth\":%u,\"high_water\":%u,\"overflows\":%lu,\"oldest_age_ms\":%lu,\"max_age_ms\":%lu}",slot?",":"",slot,stats.depth,stats.high_water,(unsigned long)stats.overflows,(unsigned long)stats.oldest_age_ms,(unsigned long)stats.max_age_ms);
+        }
+        snprintf(out+pos,sizeof(out)-pos,"]}");send_ok(id,out);return;
     }
     if(!strcmp(cmd,"SAVE_STATUS")) {
         char out[128];

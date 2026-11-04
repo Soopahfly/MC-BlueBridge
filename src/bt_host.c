@@ -49,7 +49,12 @@ static bool pairing;
 static bool classic_inquiry_active;
 static uint32_t classic_inquiry_retry_at;
 static bb_config_t remembered_cfg;
-static btstack_timer_source_t usb_watch_timer;
+static btstack_timer_source_t usb_watch_timer, input_timer;
+static void input_timer_handler(btstack_timer_source_t* timer) {
+    bb_input_tick();
+    btstack_run_loop_set_timer(timer,1);
+    btstack_run_loop_add_timer(timer);
+}
 static bool usb_was_ready;
 static uint32_t usb_lost_since;
 static uint32_t discovery_started_at;
@@ -2423,6 +2428,11 @@ void bb_bt_host_init(void) {
     sm_callback.callback = sm_handler;
     sm_add_event_handler(&sm_callback);
     hci_power_control(HCI_POWER_ON);
+    if(!bb_multi_mode()) {
+        btstack_run_loop_set_timer_handler(&input_timer,input_timer_handler);
+        btstack_run_loop_set_timer(&input_timer,1);
+        btstack_run_loop_add_timer(&input_timer);
+    }
     btstack_run_loop_set_timer_handler(&usb_watch_timer, usb_watch_handler);
     btstack_run_loop_set_timer(&usb_watch_timer, 100);
     btstack_run_loop_add_timer(&usb_watch_timer);

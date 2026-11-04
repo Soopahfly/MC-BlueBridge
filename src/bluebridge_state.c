@@ -17,10 +17,12 @@ static volatile bool mode_restart;
 static bb_config_t config_state;
 static volatile bool config_save_pending;
 static bb_config_t save_copy;
+static uint32_t config_revision;
 static uint32_t save_changed_at, save_first_at, save_retry_at, save_failures;
 static bool save_retry;
 /* Called with the configuration lock held. */
 static void request_save_locked(void) {
+    ++config_revision;
     if (!config_save_pending) save_first_at = to_ms_since_boot(get_absolute_time());
     save_changed_at = to_ms_since_boot(get_absolute_time());
     config_save_pending = true;
@@ -269,6 +271,11 @@ void bb_state_set_usb_ready(bool ready) {
     critical_section_exit(&lock);
 }
 
+void bb_state_update_scheduled_gamepad(const bb_gamepad_report_t* report) {
+    critical_section_enter_blocking(&lock);
+    runtime_state.report=*report;
+    critical_section_exit(&lock);
+}
 void bb_state_update_gamepad(const bb_gamepad_report_t* report) {
     critical_section_enter_blocking(&lock);
     runtime_state.report = *report;
@@ -414,12 +421,24 @@ void bb_config_get(bb_config_t* out) {
     critical_section_exit(&lock);
 }
 
+bool bb_input_schedule_status(uint32_t controller_id, uint32_t* revision) {
+    critical_section_enter_blocking(&lock);
+    uint8_t i=input_controller_index_locked();
+    bool valid=runtime_state.controller_connected && runtime_state.capture_mode==BB_CAPTURE_NONE &&
+        i<config_state.controller_count && config_state.controllers[i].id==controller_id;
+    *revision=config_revision;
+    critical_section_exit(&lock);
+    return valid;
+}
+
 void bb_input_config_get(bb_input_config_t* out) {
     critical_section_enter_blocking(&lock);
     uint8_t index = input_controller_index_locked();
     bb_controller_t* c = index < config_state.controller_count ? &config_state.controllers[index] : NULL;
     memset(out, 0, sizeof(*out));
+    out->revision=config_revision;
     if (c) {
+        out->controller_id = c->id;
         out->vendor_id = c->native_vendor_id;
         out->product_id = c->native_product_id;
         memcpy(out->name, c->name, sizeof(out->name));
@@ -515,6 +534,7 @@ void bb_config_set(const bb_config_t* cfg, bool persist) {
     critical_section_enter_blocking(&lock);
     config_state = *cfg;
     if (persist) request_save_locked();
+    else ++config_revision;
     critical_section_exit(&lock);
 }
 

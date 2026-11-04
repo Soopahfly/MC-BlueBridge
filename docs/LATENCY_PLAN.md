@@ -7,7 +7,7 @@ Controllers connect over Bluetooth; USB is the output to MiSTer. Software checks
 - [x] 3. Reduce OLED copying/rendering while keeping USB service bounded and prioritized.
 - [x] 4. Avoid unchanged flash writes, coalesce saves and retain failed saves for controlled retry.
 - [x] 5. Add USB queue age/depth diagnostics and backpressure tests, preserving button edges.
-- [ ] 6. Schedule turbo independently of Bluetooth reports, preserving immediate releases and profile behavior.
+- [x] 6. Schedule turbo independently of Bluetooth reports, preserving immediate releases and profile behavior.
 - [ ] 7. Run regression tests and both firmware builds; publish updated documentation and firmware.
 - [ ] Hardware: pairing, configuration import/export, simultaneous controllers, OLED/controls and turbo.
 - [ ] Hardware: measure Bluetooth-to-USB latency and queue behavior before claiming improvements.
@@ -33,3 +33,11 @@ Native tests cover idle rendering, visible input changes, unchanged flash images
 The queue now peeks and acknowledges an accepted transfer rather than removing/reinserting failed sends. Sequence tokens protect against concurrent producer replacement and overflow. Analog samples coalesce only while buttons, hat and trigger pressed/released states agree. FIFO digital edges remain preserved within the eight-report capacity; sustained host stalls can still overflow, explicitly counted rather than hidden. No speculative expiry discards short taps.
 
 `USB_QUEUE` reports each slot's current depth, high-water depth, overflow count, oldest queued age and maximum acknowledged age in milliseconds. These measure adapter queue residence, not end-to-end Bluetooth latency. Native tests cover rejected sends, concurrent replacement, trigger/button edges, overflow and timer wrap. Native suite and OLED firmware build pass.
+
+## Turbo and broader stack validation
+
+A 1 ms BTstack timer on core 0 schedules turbo from retained physical input. The timer uses a small locked validity/revision check and only recalculates the mapping at a pulse boundary or configuration change. It submits changed output only, without creating physical input edges, PEW events or Bluetooth report counts. Physical releases pass through immediately. Capture/disconnect/controller changes cancel scheduled output. Input bookkeeping and identity caches are per slot; turbo remains disabled in multi-controller mode.
+
+Tests cover modifier/toggle/hold turbo without new reports, analog-trigger pulses, immediate release, configuration changes, capture/disconnect and clock wrap. Additional real-pipeline tests cover N64 trigger identity, deadzones/inversion, macros and two-slot isolation. Native tests and both firmware variants pass.
+
+The frame-size guard now covers every project C source. `python tools/check_stack.py build` checks compiler reports and both 4 KiB linker reservations. Current largest project frames: HID diagnostics 600 bytes, input processing 496 bytes, command handler 480 bytes. SDK/libc/interrupt nesting and physical high-water measurements remain unverified; the static audit does not claim a complete runtime bound.

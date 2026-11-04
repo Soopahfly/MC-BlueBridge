@@ -69,6 +69,7 @@ typedef struct {
 } bb_controller_capabilities_t;
 
 void bb_input_clear(bb_input_state_t* state);
+void bb_input_tick(void);
 void bb_input_submit(const bb_input_state_t* state);
 uint8_t bb_hat_from_dpad(uint8_t dpad);
 bb_controller_kind_t bb_controller_identify(uint16_t vendor_id, uint16_t product_id, const char* name);

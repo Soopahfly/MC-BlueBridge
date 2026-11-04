@@ -64,19 +64,26 @@ uint8_t bb_hat_from_dpad(uint8_t dpad) {
     return 0;
 }
 
-void bb_input_submit(const bb_input_state_t* state) {
-    static uint32_t last_profile_id;
-    static uint32_t previous_inputs;
-    static uint16_t runtime_turbo_mask;
-    static bool turbo_toggle;
-    static uint8_t last_turbo_enabled;
-    static uint8_t last_turbo_mode;
-    static uint8_t last_turbo_button;
-    static uint8_t last_turbo_modifier;
-    bb_state_update_live_input(state->x, state->y, state->rx, state->ry, state->lt, state->rt, state->dpad, state->buttons);
-    bool suppress_output = bb_capture_process(state->buttons);
+typedef struct {
+    uint32_t last_profile_id, previous_inputs, published_profile;
+    uint16_t runtime_turbo_mask, published_mask;
+    bool turbo_toggle, scheduled;
+    uint8_t last_turbo_enabled, last_turbo_mode, last_turbo_button, last_turbo_modifier;
+    uint32_t controller_id, revision, next_transition;
+    uint16_t cached_vid, cached_pid;
+    char cached_name[BB_MAX_NAME];
+    bb_controller_kind_t kind;
+    bb_input_state_t retained;
+    bb_gamepad_report_t last_report;
+} bb_input_runtime_t;
+static bb_input_runtime_t input_slots[BB_MAX_SLOTS];
+static void process_input(const bb_input_state_t* state, bool physical) {
+    bb_input_runtime_t* slot=&input_slots[bb_slot_current()];
+    slot->scheduled=false;
+    if(physical)bb_state_update_live_input(state->x, state->y, state->rx, state->ry, state->lt, state->rt, state->dpad, state->buttons);
+    bool suppress_output = physical ? bb_capture_process(state->buttons) : false;
     if (suppress_output && !bb_capture_is_tester()) {
-        previous_inputs = state->buttons;
+        slot->previous_inputs = state->buttons;
         bb_gamepad_report_t neutral = {0};
         bb_state_update_gamepad(&neutral);
         bb_usb_submit(&neutral);
@@ -84,21 +91,27 @@ void bb_input_submit(const bb_input_state_t* state) {
     }
     bb_input_config_t config;
     bb_input_config_get(&config);
+    if(!physical && slot->controller_id!=config.controller_id) {
+        bb_gamepad_report_t neutral={0};
+        bb_state_update_scheduled_gamepad(&neutral);bb_usb_submit(&neutral);return;
+    }
+    slot->controller_id=config.controller_id;
+    slot->revision=config.revision;
     bb_profile_t profile = config.profile;
     if (bb_multi_mode()) {
         profile.turbo_enabled = 0;
         profile.turbo_rate_hz = 0;
         memset(profile.macros, 0, sizeof(profile.macros));
     }
-    if (profile.id != last_profile_id || profile.turbo_enabled != last_turbo_enabled || profile.turbo_control_mode != last_turbo_mode || profile.turbo_control_button != last_turbo_button || profile.turbo_modifier != last_turbo_modifier) {
-        last_profile_id = profile.id;
-        last_turbo_enabled = profile.turbo_enabled;
-        last_turbo_mode = profile.turbo_control_mode;
-        last_turbo_button = profile.turbo_control_button;
-        last_turbo_modifier = profile.turbo_modifier;
-        previous_inputs = 0;
-        runtime_turbo_mask = 0;
-        turbo_toggle = false;
+    if (profile.id != slot->last_profile_id || profile.turbo_enabled != slot->last_turbo_enabled || profile.turbo_control_mode != slot->last_turbo_mode || profile.turbo_control_button != slot->last_turbo_button || profile.turbo_modifier != slot->last_turbo_modifier) {
+        slot->last_profile_id = profile.id;
+        slot->last_turbo_enabled = profile.turbo_enabled;
+        slot->last_turbo_mode = profile.turbo_control_mode;
+        slot->last_turbo_button = profile.turbo_control_button;
+        slot->last_turbo_modifier = profile.turbo_modifier;
+        slot->previous_inputs = 0;
+        slot->runtime_turbo_mask = 0;
+        slot->turbo_toggle = false;
     }
     int16_t x = apply_axis_deadzone(state->x, profile.deadzone_left);
     int16_t y = apply_axis_deadzone(state->y, profile.deadzone_left);
@@ -116,28 +129,25 @@ void bb_input_submit(const bb_input_state_t* state) {
     uint16_t lt = apply_trigger_deadzone(state->lt, profile.trigger_deadzone);
     uint16_t rt = apply_trigger_deadzone(state->rt, profile.trigger_deadzone);
     /* Identification changes only when the connected identity changes. */
-    static uint16_t cached_vid, cached_pid;
-    static char cached_name[BB_MAX_NAME];
-    static bb_controller_kind_t kind;
-    if (cached_vid != config.vendor_id || cached_pid != config.product_id || memcmp(cached_name, config.name, sizeof(cached_name))) {
-        cached_vid = config.vendor_id; cached_pid = config.product_id;
-        memcpy(cached_name, config.name, sizeof(cached_name));
-        kind = bb_controller_identify(cached_vid, cached_pid, cached_name);
+    if (slot->cached_vid != config.vendor_id || slot->cached_pid != config.product_id || memcmp(slot->cached_name, config.name, sizeof(slot->cached_name))) {
+        slot->cached_vid = config.vendor_id; slot->cached_pid = config.product_id;
+        memcpy(slot->cached_name, config.name, sizeof(slot->cached_name));
+        slot->kind = bb_controller_identify(slot->cached_vid, slot->cached_pid, slot->cached_name);
     }
-    uint8_t right_trigger_input = kind == BB_CONTROLLER_NSO_N64 ? 10 : 7;
+    uint8_t right_trigger_input = slot->kind == BB_CONTROLLER_NSO_N64 ? 10 : 7;
     report.hat = bb_hat_from_dpad(state->dpad);
     uint16_t mapped = 0;
-    uint32_t pressed_edges = state->buttons & ~previous_inputs;
+    uint32_t pressed_edges = physical ? state->buttons & ~slot->previous_inputs : 0;
     bool shortcut_layer = profile.turbo_enabled && profile.turbo_control_mode == 0 && profile.turbo_modifier < BB_BUTTON_COUNT && (state->buttons & (1u << profile.turbo_modifier));
     bool dedicated_hold = false;
     if (shortcut_layer) {
         for (uint8_t i = 0; i < BB_BUTTON_COUNT; ++i) {
             if (i == profile.turbo_modifier || !(pressed_edges & (1u << i))) continue;
             uint8_t target = profile.button_map[i];
-            if (target < BB_OUTPUT_BUTTON_COUNT) runtime_turbo_mask ^= (uint16_t)(1u << target);
+            if (target < BB_OUTPUT_BUTTON_COUNT) slot->runtime_turbo_mask ^= (uint16_t)(1u << target);
         }
     }
-    if (profile.turbo_enabled && profile.turbo_control_mode == 1 && profile.turbo_control_button < BB_BUTTON_COUNT && (pressed_edges & (1u << profile.turbo_control_button))) turbo_toggle = !turbo_toggle;
+    if (profile.turbo_enabled && profile.turbo_control_mode == 1 && profile.turbo_control_button < BB_BUTTON_COUNT && (pressed_edges & (1u << profile.turbo_control_button))) slot->turbo_toggle = !slot->turbo_toggle;
     if (profile.turbo_enabled && profile.turbo_control_mode == 2 && profile.turbo_control_button < BB_BUTTON_COUNT && (state->buttons & (1u << profile.turbo_control_button))) dedicated_hold = true;
     for (uint8_t i = 0; i < BB_BUTTON_COUNT; ++i) {
         bool pressed = (state->buttons & (1u << i)) != 0;
@@ -165,16 +175,19 @@ void bb_input_submit(const bb_input_state_t* state) {
     }
     if (profile.turbo_enabled && profile.turbo_rate_hz) {
         uint16_t active_turbo = 0;
-        if (profile.turbo_control_mode == 0) active_turbo = runtime_turbo_mask;
-        else if (turbo_toggle || dedicated_hold) active_turbo = profile.turbo_mask;
+        if (profile.turbo_control_mode == 0) active_turbo = slot->runtime_turbo_mask;
+        else if (slot->turbo_toggle || dedicated_hold) active_turbo = profile.turbo_mask;
         uint16_t active_outputs = mapped;
         if (report.lt) active_outputs |= 1u << 6;
         if (report.rt) active_outputs |= 1u << 7;
         active_turbo &= active_outputs;
         if (active_turbo) {
+            slot->scheduled=true;
             uint32_t period_ms = 1000u / profile.turbo_rate_hz;
             if (period_ms < 2) period_ms = 2;
-            uint32_t phase = to_ms_since_boot(get_absolute_time()) % period_ms;
+            uint32_t now=to_ms_since_boot(get_absolute_time());
+            uint32_t phase = now % period_ms;
+            slot->next_transition=now+(phase<period_ms/2u?period_ms/2u-phase:period_ms-phase);
             if (phase >= period_ms / 2u) {
                 mapped &= (uint16_t)~active_turbo;
                 if (active_turbo & (1u << 6)) report.lt = 0;
@@ -182,17 +195,45 @@ void bb_input_submit(const bb_input_state_t* state) {
             }
         }
     }
-    previous_inputs = state->buttons;
-    bb_state_update_turbo(profile.id, profile.turbo_enabled ?
-        (profile.turbo_control_mode == 0 ? runtime_turbo_mask : profile.turbo_mask) : 0);
+    slot->previous_inputs = state->buttons;
+    uint16_t assignments=profile.turbo_enabled ?
+        (profile.turbo_control_mode == 0 ? slot->runtime_turbo_mask : profile.turbo_mask) : 0;
+    if(physical || slot->published_profile!=profile.id || slot->published_mask!=assignments) {
+        bb_state_update_turbo(profile.id,assignments);
+        slot->published_profile=profile.id;slot->published_mask=assignments;
+    }
     report.buttons = mapped;
-    bb_state_update_gamepad(&report);
+    if(physical)bb_state_update_gamepad(&report);
+    else if(memcmp(&slot->last_report,&report,sizeof(report)))bb_state_update_scheduled_gamepad(&report);
+    if(!physical && !memcmp(&slot->last_report,&report,sizeof(report)))return;
+    slot->last_report=report;
     if (suppress_output) {
+        slot->scheduled=false;
         bb_gamepad_report_t neutral = {0};
         bb_usb_submit(&neutral);
     } else {
         bb_usb_submit(&report);
     }
+}
+
+void bb_input_submit(const bb_input_state_t* state) {
+    input_slots[bb_slot_current()].retained=*state;
+    process_input(state,true);
+}
+/* Called on core 0 by BTstack's timer, never concurrently with input callbacks. */
+void bb_input_tick(void) {
+    if(bb_multi_mode())return;
+    bb_input_runtime_t* slot=&input_slots[0];
+    if(!slot->scheduled)return;
+    uint32_t revision;
+    if(!bb_input_schedule_status(slot->controller_id,&revision)) {
+        slot->scheduled=false;
+        bb_gamepad_report_t neutral={0};
+        bb_state_update_scheduled_gamepad(&neutral);bb_usb_submit(&neutral);
+        return;
+    }
+    if(revision!=slot->revision || (int32_t)(to_ms_since_boot(get_absolute_time())-slot->next_transition)>=0)
+        process_input(&slot->retained,false);
 }
 
 bb_controller_kind_t bb_controller_identify(uint16_t vid, uint16_t pid, const char* name) {

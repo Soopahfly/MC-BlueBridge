@@ -5,3 +5,4 @@ deps/btstack/
 .build-tools/
 build-*/
 __pycache__/
+build-*.log
