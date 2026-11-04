@@ -66,13 +66,37 @@ Use a quadrature rotary encoder with a push switch. Four signal transitions per
 detent is the default; two-transition encoders are configurable. Swap A and B
 if rotation feels reversed. No buzzer or audio hardware is used.
 
+For a bare encoder (for example, a Bourns PEC11R with a push switch), connect:
+
+```text
+Encoder A ---------------- GP6 (physical pin 9)
+Encoder B ---------------- GP7 (physical pin 10)
+Encoder common C --------- GND
+Push-switch terminal 1 --- GP8 (physical pin 11)
+Push-switch terminal 2 --- GND
+```
+
+A bare encoder has no VCC connection. Terminal order varies: identify A/B/common
+and the two switch terminals from the particular encoder's datasheet.
+
+## Trackball alternative (planned)
+
+A Pimoroni PIM447 I2C trackball with RGBW illumination was discussed as an
+alternative to the encoder. **No trackball input or LED-control driver is present
+in the current firmware.** The encoder remains the supported physical control.
+The proposed trackball connection is a separate I2C1 bus on GP2/GP3, sharing
+3.3 V and GND; it is a future wiring plan, not a tested configuration. Raw
+direction-output trackball boards require a different driver from the Pimoroni
+I2C module. Navigation sensitivity, click/hold handling, I2C transactions and
+LED status behavior still need implementation and hardware validation.
+
 ## Navigation
 
-- Press or turn from the status screen to open the menu.
+- Press or turn from either normal screen to open the menu.
 - Turn to choose a setting; press to edit it.
 - Turn to preview a value; press again to apply/save it.
-- Hold for 0.8 seconds to cancel an edit, or return from the menu to status.
-- Select Back to return to status.
+- Hold for 0.8 seconds to cancel an edit, or return from the menu to the selected screen.
+- Select Back to return to the selected screen.
 
 Menu settings:
 
@@ -108,8 +132,9 @@ effect on gamepad output. It watches the chosen input button before remapping,
 not a game-specific fire action. The default trigger is South (canonical input 0).
 Actual press edges trigger a 400 ms full-screen comic burst: `PEW` at top centre,
 then a tilted `PEW` at left and another at right. There is no character or mascot;
-the normal status screen returns afterwards. Held buttons and generated turbo pulses do not retrigger
-it. New effects start at most once every 750 ms; the menu takes priority. Button
+the previously selected live/status screen returns afterwards. Held buttons and
+generated turbo pulses do not retrigger it. New effects start at most once every
+750 ms; the menu takes priority. Button
 capture/tester mode suppresses new effects.
 
 To use the configuration checkbox on a computer:
@@ -162,6 +187,29 @@ It does not download or install tools. `tools/build.ps1 -WithoutOled` creates
 the corresponding `build-no-oled` build. Extra options can be supplied through
 `-CmakeArgs @('-DBB_OLED_ADDRESS=0x3d')`.
 
+## Flashing and first use
+
+1. Export your existing adapter configuration through its management interface.
+2. Build the firmware. The default output is `build/mc_bluebridge.uf2`; a
+   panel-disabled Windows-script build uses `build-no-oled/mc_bluebridge.uf2`.
+   These generated binaries and the local tool downloads are not committed to
+   the repository. UF2 packaging requires Raspberry Pi's picotool; do not set
+   `PICO_NO_PICOTOOL=1` if you need the UF2 output.
+3. Unplug the Pico. Hold BOOTSEL while reconnecting USB to a computer, then
+   release it when the Pico bootloader drive appears.
+4. Copy the UF2 to that drive. The Pico restarts into the firmware automatically.
+5. Connect/pair a controller. Live Controller is the default screen. Open the
+   encoder menu and choose Display Screen to switch to Status if preferred.
+6. To enable the optional effect, select the intended Controller and Profile,
+   then set PEW PEW to enabled and choose Fire Button. Alternatively use the
+   local configuration page described above. Power-cycle to check persistence.
+
+PEW settings persist per profile. The Live Controller/Status screen selection is
+currently session-only and resets to Live Controller after restarting. The old
+firmware cannot read schema 14; keep your pre-upgrade export if you intend to
+return to it. Trackball hardware does not replace the encoder without a future
+firmware update.
+
 ## Management protocol and persistence
 
 The BB1 wire format and protocol version 2 are retained. `HELLO` advertises
@@ -203,9 +251,11 @@ Export a backup before flashing; older firmware will not understand schema 14.
   wiring. Encoder operation remains independent of display detection.
 - Bluetooth callbacks never draw or perform I2C transfers.
 
-Memory footprint depends on the selected build and includes the live controller
-renderer. Compare `arm-none-eabi-size` output for panel-enabled and disabled
-builds; those figures exclude transient stack use and are not a latency measurement.
+In the validated Release builds with the live renderer, enabling the panel adds
+21,192 bytes of code/read-only data and 4,008 bytes of static RAM versus the same
+fork built with `BB_ENABLE_OLED=OFF`. Compare `arm-none-eabi-size` output when
+changing build settings; these figures exclude transient stack use and are not
+a latency measurement.
 
 ## Validation and hardware bring-up
 
@@ -218,6 +268,10 @@ Native C tests cover encoder direction/bounce/hold/wrap, fire edges/capture,
 profile/controller lifecycle, flash checksums and migration, menu confirmation,
 turbo controls, animation timing, multi-controller restrictions, idle I2C
 suppression, changed pages, in-flight changes, NACK and stuck-bus timeouts.
+Controller-renderer tests cover family selection, press fills, released-button
+turbo rings, stick/D-pad/trigger changes, remapped turbo rings, and the real input
+pipeline's modifier-selected turbo assignments. Renderer tests write sample
+128x64 monochrome PBM frames under `build-host/` for inspection.
 The JavaScript test exercises the actual checkbox page with simulated Web Serial,
 including split replies, saved values and stale-profile protection.
 

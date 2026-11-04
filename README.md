@@ -8,11 +8,15 @@ MC BlueBridge is free and open source.
 
 ### OLED/encoder fork
 
-This fork adds a 128x64 SSD1306 I2C status display, rotary-encoder settings menu,
-and an optional per-profile OLED-only **PEW PEW** animation. See
+This fork adds a 128x64 SSD1306 I2C display with live PlayStation/Xbox/Nintendo
+controller layouts, pressed-input highlights, turbo-assignment rings, a simpler
+status screen, a rotary-encoder settings menu, and an optional per-profile
+OLED-only **PEW PEW** animation. See
 [OLED wiring, configuration and build instructions](docs/OLED.md).
 The companion applications are separate projects; a local USB configuration
 page for the animation checkbox is included in `tools/oled-config.html`.
+Trackball control is proposed but not implemented. Firmware builds and automated
+tests pass; physical wiring and controller-latency validation remain outstanding.
 
 ## Features
 
