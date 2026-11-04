@@ -267,6 +267,14 @@ static void handle_command(char* text) {
     char* cmd = next_field(&cursor);
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
+    if(!strcmp(cmd,"USB_QUEUE")) {
+        for(uint8_t slot=0;slot<(bb_multi_mode()?BB_MAX_SLOTS:1);++slot) {
+            bb_usb_queue_stats_t stats;bb_usb_queue_stats(slot,&stats);
+            char out[256];
+            snprintf(out,sizeof(out),"{\"slot\":%u,\"depth\":%u,\"high_water\":%u,\"overflows\":%lu,\"oldest_age_ms\":%lu,\"max_age_ms\":%lu}",slot,stats.depth,stats.high_water,(unsigned long)stats.overflows,(unsigned long)stats.oldest_age_ms,(unsigned long)stats.max_age_ms);
+            send_ok(id,out);
+        }return;
+    }
     if(!strcmp(cmd,"SAVE_STATUS")) {
         char out[128];
         snprintf(out,sizeof(out),"{\"pending\":%s,\"failures\":%lu}",bb_config_is_pending()?"true":"false",(unsigned long)bb_config_save_failures());

@@ -1,4 +1,5 @@
 #include "usb_device.h"
+#include "usb_report_queue.h"
 #include "usb_descriptors.h"
 #include "xinput_device.h"
 #include "xbox360_auth.h"
@@ -17,12 +18,6 @@
 
 static critical_section_t usb_lock;
 static volatile bool usb_lock_ready;
-#define BB_USB_QUEUE_DEPTH 8
-typedef struct {
-    bb_gamepad_report_t reports[BB_USB_QUEUE_DEPTH];
-    uint8_t head;
-    uint8_t count;
-} bb_usb_queue_t;
 static bb_usb_queue_t usb_queues[BB_MAX_SLOTS];
 static bb_gamepad_report_t latest_slots[BB_MAX_SLOTS];
 static bool press_latch_enabled[BB_MAX_SLOTS];
@@ -33,35 +28,24 @@ static bool reenumerate;
 static volatile bool usb_mounted;
 static uint32_t switch_last_send;
 
-static bool same_digital_state(const bb_gamepad_report_t* a, const bb_gamepad_report_t* b) {
-    return a->buttons == b->buttons && a->hat == b->hat;
-}
-
 static bool queue_push_locked(uint8_t slot, const bb_gamepad_report_t* report) {
-    bb_usb_queue_t* q = &usb_queues[slot];
+    uint32_t now = to_ms_since_boot(get_absolute_time());
     latest_slots[slot] = *report;
     if (!usb_mounted) {
-        q->head = 0;
-        q->count = 1;
-        q->reports[0] = *report;
+        bb_queue_reset(&usb_queues[slot],report,now);
         return false;
     }
-    if (q->count) {
-        uint8_t last = (uint8_t)((q->head + q->count - 1u) % BB_USB_QUEUE_DEPTH);
-        if (same_digital_state(&q->reports[last], report)) {
-            q->reports[last] = *report;
-            return false;
-        }
-    }
-    bool overflow = q->count == BB_USB_QUEUE_DEPTH;
-    if (overflow) {
-        q->head = (uint8_t)((q->head + 1u) % BB_USB_QUEUE_DEPTH);
-        --q->count;
-    }
-    uint8_t tail = (uint8_t)((q->head + q->count) % BB_USB_QUEUE_DEPTH);
-    q->reports[tail] = *report;
-    ++q->count;
-    return overflow;
+    return bb_queue_push(&usb_queues[slot],report,now);
+}
+void bb_usb_queue_stats(uint8_t slot, bb_usb_queue_stats_t* out) {
+    memset(out,0,sizeof(*out));
+    if(slot>=BB_MAX_SLOTS || !usb_lock_ready)return;
+    critical_section_enter_blocking(&usb_lock);
+    bb_usb_queue_t* q=&usb_queues[slot];
+    out->depth=q->count;out->high_water=q->high_water;
+    out->overflows=q->overflows;out->max_age_ms=q->max_age_ms;
+    if(q->count)out->oldest_age_ms=to_ms_since_boot(get_absolute_time())-q->entries[q->head].at;
+    critical_section_exit(&usb_lock);
 }
 
 void bb_usb_submit(const bb_gamepad_report_t* report) {
@@ -189,12 +173,11 @@ static void send_pending(void) {
     uint16_t latched_for_send = 0;
     bool send = false;
     bool queued = false;
+    bb_usb_queue_entry_t entry;
     critical_section_enter_blocking(&usb_lock);
     bb_usb_queue_t* q = &usb_queues[usb_slot];
-    if (q->count) {
-        report = q->reports[q->head];
-        q->head = (uint8_t)((q->head + 1u) % BB_USB_QUEUE_DEPTH);
-        --q->count;
+    if (bb_queue_peek(q,&entry)) {
+        report = entry.report;
         send = true;
         queued = true;
     } else if (mode == BB_OUTPUT_XBOX360) {
@@ -243,14 +226,9 @@ static void send_pending(void) {
         press_latched_buttons[usb_slot] |= latched_for_send;
         critical_section_exit(&usb_lock);
     }
-    if (!ok && queued) {
+    if (ok && queued) {
         critical_section_enter_blocking(&usb_lock);
-        q = &usb_queues[usb_slot];
-        if (q->count < BB_USB_QUEUE_DEPTH) {
-            q->head = (uint8_t)((q->head + BB_USB_QUEUE_DEPTH - 1u) % BB_USB_QUEUE_DEPTH);
-            q->reports[q->head] = report;
-            ++q->count;
-        }
+        bb_queue_ack(&usb_queues[usb_slot],entry.sequence,to_ms_since_boot(get_absolute_time()));
         critical_section_exit(&usb_lock);
     }
 }
@@ -325,9 +303,7 @@ void tud_mount_cb(void) {
     bb_state_set_usb_ready(true);
     critical_section_enter_blocking(&usb_lock);
     for (unsigned i = 0; i < BB_MAX_SLOTS; ++i) {
-        usb_queues[i].head = 0;
-        usb_queues[i].count = 1;
-        usb_queues[i].reports[0] = latest_slots[i];
+        bb_queue_reset(&usb_queues[i],&latest_slots[i],to_ms_since_boot(get_absolute_time()));
     }
     critical_section_exit(&usb_lock);
 }

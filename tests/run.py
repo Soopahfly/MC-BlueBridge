@@ -15,6 +15,7 @@ env["PATH"] = str(Path(cc).parent) + os.pathsep + env.get("PATH", "")
 out = root / "build-host"
 out.mkdir(exist_ok=True)
 for name, sources in {
+    "usb-queue": ["tests/test_usb_queue.c", "src/usb_report_queue.c"],
     "controls": ["tests/test_controls.c", "src/panel_controls.c"],
     "state": ["tests/test_state.c", "src/bluebridge_state.c", "src/config_store.c"],
     "oled": ["tests/test_oled.c"],

@@ -6,7 +6,7 @@ Controllers connect over Bluetooth; USB is the output to MiSTer. Software checks
 - [x] 2. Replace whole-controller input copies with compact snapshots and reduce repeated identity work.
 - [x] 3. Reduce OLED copying/rendering while keeping USB service bounded and prioritized.
 - [x] 4. Avoid unchanged flash writes, coalesce saves and retain failed saves for controlled retry.
-- [ ] 5. Add USB queue age/depth diagnostics and backpressure tests, preserving button edges.
+- [x] 5. Add USB queue age/depth diagnostics and backpressure tests, preserving button edges.
 - [ ] 6. Schedule turbo independently of Bluetooth reports, preserving immediate releases and profile behavior.
 - [ ] 7. Run regression tests and both firmware builds; publish updated documentation and firmware.
 - [ ] Hardware: pairing, configuration import/export, simultaneous controllers, OLED/controls and turbo.
@@ -27,3 +27,9 @@ Normal OLED snapshots copy controller metadata plus the active profile; profile 
 Saves coalesce for 250 ms (maximum batch window 1 s); identical stored images skip erase/program. Failed saves remain pending and retry no faster than once per second. Restart waits for a successful save. `SAVE_STATUS` exposes pending state and failure count. Flash operations still pause execution; batching does not eliminate that hardware behavior.
 
 Native tests cover idle rendering, visible input changes, unchanged flash images, save failure, retry pacing and persistence. All native tests and the OLED firmware build pass.
+
+## USB backpressure validation
+
+The queue now peeks and acknowledges an accepted transfer rather than removing/reinserting failed sends. Sequence tokens protect against concurrent producer replacement and overflow. Analog samples coalesce only while buttons, hat and trigger pressed/released states agree. FIFO digital edges remain preserved within the eight-report capacity; sustained host stalls can still overflow, explicitly counted rather than hidden. No speculative expiry discards short taps.
+
+`USB_QUEUE` reports each slot's current depth, high-water depth, overflow count, oldest queued age and maximum acknowledged age in milliseconds. These measure adapter queue residence, not end-to-end Bluetooth latency. Native tests cover rejected sends, concurrent replacement, trigger/button edges, overflow and timer wrap. Native suite and OLED firmware build pass.
