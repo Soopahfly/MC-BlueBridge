@@ -28,7 +28,10 @@ static int decode_payload(bb_steam_controller_t* s,unsigned size,uint32_t now,bo
     if(flags&0x40u)at+=3; /* Additional button bytes: not used by the original pad. */
     if(flags&0x80u){c.stick_x=signed16(p+at);c.stick_y=signed16(p+at+2);at+=4;}
     if(flags&0x100u){c.left_x=signed16(p+at);c.left_y=signed16(p+at+2);at+=4;}
-    if(flags&0x200u){c.right_x=signed16(p+at);c.right_y=signed16(p+at+2);}
+    if(flags&0x200u){c.right_x=signed16(p+at);c.right_y=signed16(p+at+2);at+=4;}
+    if(flags&0x400u)at+=6; /* Accelerometer is not used for relative aiming. */
+    int32_t pitch=0,yaw=0;
+    if(flags&0x800u){pitch=signed16(p+at);yaw=signed16(p+at+4);}
     s->controls=c;
     memset(input,0,sizeof(*input));*pointer=(bb_pointer_sample_t){0};
     input->x=c.stick_x;input->y=invert(c.stick_y);input->lt=c.lt;input->rt=c.rt;
@@ -45,6 +48,7 @@ static int decode_payload(bb_steam_controller_t* s,unsigned size,uint32_t now,bo
         if(c.left_x< -8192)input->dpad|=4;
         if(c.left_x>8192)input->dpad|=8;
     }
+    uint32_t canonical_buttons=input->buttons;
     bool touching=c.have_buttons&&(c.buttons&0x100000u)!=0;
     if(!mouse) {
         if(touching){input->rx=c.right_x;input->ry=invert(c.right_y);}
@@ -66,6 +70,35 @@ static int decode_payload(bb_steam_controller_t* s,unsigned size,uint32_t now,bo
             s->pointer_at=now;
         }
     }
+    bb_steam_aim_t aim=s->aim;
+    bool aiming=mouse && aim.enabled && bb_steam_aim_valid(aim);
+    if(aiming) {
+        bool paused=aim.pause_button<32 && (canonical_buttons&(1u<<aim.pause_button));
+        if(aim.pause_button<32)input->buttons&=~(1u<<aim.pause_button);
+        bool active=!paused && (aim.activation==0 || (aim.activation==1&&touching) ||
+            (aim.activation==2&&((c.buttons&2u)||c.lt>=128)));
+        if(aim.flags&BB_AIM_TRIGGER_FIRE) {
+            if((c.buttons&1u)||c.rt>=128)pointer->buttons|=1;
+            input->buttons&=~(1u<<7);input->rt=0; /* Avoid duplicate gamepad fire. */
+        }
+        if(!active){s->gyro_active=false;s->gyro_remainder_x=s->gyro_remainder_y=0;}
+        if(flags&0x800u) {
+            uint32_t dt=now-s->gyro_at;
+            if(active && s->gyro_active && dt<=50u) {
+                /* Raw +/-2000 degrees/s, 10 mouse counts/degree at 100%.
+                 * No catch-up after a radio gap and no stale delta integration. */
+                if(yaw>=-8&&yaw<=8)yaw=0;
+                if(pitch>=-8&&pitch<=8)pitch=0;
+                if(aim.flags&BB_AIM_INVERT_X)yaw=-yaw;
+                if(aim.flags&BB_AIM_INVERT_Y)pitch=-pitch;
+                int32_t x=yaw*(int32_t)dt*aim.sensitivity+s->gyro_remainder_x;
+                int32_t y=-pitch*(int32_t)dt*aim.sensitivity+s->gyro_remainder_y;
+                pointer->x+=(int16_t)(x/163840);pointer->y+=(int16_t)(y/163840);
+                s->gyro_remainder_x=x%163840;s->gyro_remainder_y=y%163840;
+            } else s->gyro_remainder_x=s->gyro_remainder_y=0;
+            s->gyro_at=now;s->gyro_active=active;
+        }
+    } else {s->gyro_active=false;s->gyro_remainder_x=s->gyro_remainder_y=0;}
     ++s->reports;return 1;
 }
 

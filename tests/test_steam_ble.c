@@ -51,27 +51,27 @@ static void finish(uint16_t h){
 }
 int main(void){
     bb_steam_ble_t a={0},b={0};test_a=&a;test_b=&b;
-    bb_steam_ble_start(&a,0,0x40,now,callback);assert(a.stage==BB_STEAM_SERVICE&&a.waiting);
+    bb_steam_ble_start(&a,0,0x40,now,false,callback);assert(a.stage==BB_STEAM_SERVICE&&a.waiting);
     discover(0x40);assert(a.stage==BB_STEAM_NOTIFY&&!ready[0]);finish(0x40);assert(ready[0]==1&&a.stage==BB_STEAM_READY);
     uint8_t p[31];header(p,31,GATT_EVENT_NOTIFICATION,0x40);p[8]=5;p[10]=19;p[12]=0xc0;
     handler[0](HCI_EVENT_PACKET,0,p,sizeof(p));assert(inputs[0]==1);
     p[10]=20;handler[0](HCI_EVENT_PACKET,0,p,sizeof(p));assert(inputs[0]==1); /* Truncated notification. */
-    bb_steam_ble_start(&b,1,0x41,now,callback);discover(0x41);finish(0x41);assert(ready[1]==1);
+    bb_steam_ble_start(&b,1,0x41,now,true,callback);discover(0x41);finish(0x41);assert(ready[1]==1&&command[4]==0x10&&a.configure[4]==0);
     bb_steam_ble_stop(&a);p[10]=19;handler[0](HCI_EVENT_PACKET,0,p,sizeof(p));assert(inputs[0]==1&&b.stage==BB_STEAM_READY);
     bb_steam_ble_stop(&b);assert(stopped==2);
     /* No service and a GATT rejection must fail rather than claim ready. */
-    bb_steam_ble_start(&a,0,0x40,now,callback);complete(0x40,0);assert(failed[0]==1&&a.failed_stage==BB_STEAM_SERVICE);
-    bb_steam_ble_stop(&a);bb_steam_ble_start(&a,0,0x40,now,callback);discover(0x40);complete(0x40,5);
+    bb_steam_ble_start(&a,0,0x40,now,false,callback);complete(0x40,0);assert(failed[0]==1&&a.failed_stage==BB_STEAM_SERVICE);
+    bb_steam_ble_stop(&a);bb_steam_ble_start(&a,0,0x40,now,false,callback);discover(0x40);complete(0x40,5);
     assert(failed[0]==2&&!a.listening&&a.failed_stage==BB_STEAM_NOTIFY);bb_steam_ble_stop(&a);
     /* Busy request retries only when polled, and waiting requests time out. */
-    next_status=GATT_CLIENT_IN_WRONG_STATE;bb_steam_ble_start(&a,0,0x40,now,callback);assert(!a.waiting);
+    next_status=GATT_CLIENT_IN_WRONG_STATE;bb_steam_ble_start(&a,0,0x40,now,false,callback);assert(!a.waiting);
     unsigned before=operations;now++;bb_steam_ble_poll(&a,now);assert(a.waiting&&operations==before+1);
     now+=3000;bb_steam_ble_poll(&a,now);assert(failed[0]==3&&a.status==ERROR_CODE_CONNECTION_TIMEOUT);
     bb_steam_ble_stop(&a);
     /* Newer Steam variants without the original input characteristic are rejected. */
-    bb_steam_ble_start(&a,0,0x40,now,callback);service(0x40);complete(0x40,0);characteristic(0x40,false);complete(0x40,0);
+    bb_steam_ble_start(&a,0,0x40,now,false,callback);service(0x40);complete(0x40,0);characteristic(0x40,false);complete(0x40,0);
     assert(a.stage==BB_STEAM_FAILED&&failed[0]==4);bb_steam_ble_stop(&a);
-    now=0xfffffff0u;bb_steam_ble_start(&a,0,0x40,now,callback);
+    now=0xfffffff0u;bb_steam_ble_start(&a,0,0x40,now,false,callback);
     now=3010;bb_steam_ble_poll(&a,now);assert(a.stage==BB_STEAM_FAILED);bb_steam_ble_stop(&a);
     puts("Steam BLE: discovery/setup order, ready gating, malformed input, two clients, cleanup, failures and timeout passed");
 }

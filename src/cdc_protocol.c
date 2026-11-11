@@ -267,6 +267,26 @@ static void handle_command(char* text) {
     char* cmd = next_field(&cursor);
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
+    if(!strcmp(cmd,"STEAM_AIM_GET")) {
+        bb_steam_aim_t a=bb_steam_aim_get(),active=bb_steam_aim_current();
+        char out[256];snprintf(out,sizeof(out),"{\"enabled\":%u,\"sensitivity\":%u,\"activation\":%u,\"flags\":%u,\"pause_button\":%u,\"restart_required\":%s}",
+            a.enabled,a.sensitivity,a.activation,a.flags,a.pause_button,memcmp(&a,&active,sizeof(a))?"true":"false");
+        send_ok(id,out);return;
+    }
+    if(!strcmp(cmd,"STEAM_AIM_SET")) {
+        uint8_t fields[6];
+        for(unsigned i=0;i<6;i++) {
+            char* field=next_field(&cursor);char* end;
+            if(!field||!*field){send_err(id,"steam_aim");return;}
+            for(char* p=field;*p;p++)if(*p<'0'||*p>'9'){send_err(id,"steam_aim");return;}
+            unsigned long n=strtoul(field,&end,10);
+            if(*end||n>255){send_err(id,"steam_aim");return;}fields[i]=(uint8_t)n;
+        }
+        bb_steam_aim_t a={fields[0],fields[1],fields[2],fields[3],fields[4]};
+        if(cursor||fields[5]>1||!bb_pointer_settings_set(a,fields[5]!=0)){send_err(id,"steam_aim");return;}
+        bb_steam_aim_t active=bb_steam_aim_current();char out[64];
+        snprintf(out,sizeof(out),"{\"restart_required\":%s}",(memcmp(&a,&active,sizeof(a))||bb_touch_mouse_get()!=bb_touch_mouse_current())?"true":"false");send_ok(id,out);return;
+    }
     if(!strcmp(cmd,"STEAM_GET")) {
         static char out[512];if(bb_bt_host_steam_diagnostics(out,sizeof(out)))send_ok(id,out);else send_err(id,"steam_diagnostics");return;
     }
@@ -334,12 +354,12 @@ static void handle_command(char* text) {
     }
 
     if (!strcmp(cmd, "HELLO")) {
-        static char out[768], adapter_name[BB_MAX_NAME], custom_name[BB_MAX_NAME];
+        static char out[1024], adapter_name[BB_MAX_NAME], custom_name[BB_MAX_NAME];
         char adapter_id[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
         bb_adapter_name_get(adapter_name, sizeof(adapter_name));
         bb_adapter_custom_name_get(custom_name, sizeof(custom_name));
         pico_get_unique_board_id_string(adapter_id, sizeof(adapter_id));
-        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"profile_oled\":true,\"panel_configuration\":true,\"oled_toggle\":true,\"touch_mouse\":true,\"steam_ble\":true,\"oled_panel\":%s},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BB_ENABLE_OLED ? "true" : "false", BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
+        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"profile_oled\":true,\"panel_configuration\":true,\"oled_toggle\":true,\"touch_mouse\":true,\"steam_ble\":true,\"steam_gyro\":true,\"oled_panel\":%s},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BB_ENABLE_OLED ? "true" : "false", BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
         send_ok(id, out);
         return;
     }
@@ -656,7 +676,7 @@ static void handle_command(char* text) {
         char* size = next_field(&cursor);
         char* checksum = next_field(&cursor);
         int schema_value = schema ? atoi(schema) : 0;
-        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 14 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V14_SIZE) || (schema_value == 15 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V15_SIZE) || (schema_value == 16 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V16_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13 && schema_value != 14 && schema_value != 15 && schema_value != 16))) {
+        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 14 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V14_SIZE) || (schema_value == 15 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V15_SIZE) || (schema_value == 17 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V17_SIZE) || (schema_value == 16 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V16_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13 && schema_value != 14 && schema_value != 15 && schema_value != 16 && schema_value != 17))) {
             import_active = false;
             send_err(id, "config_header");
             return;

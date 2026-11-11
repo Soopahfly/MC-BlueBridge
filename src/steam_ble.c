@@ -7,7 +7,7 @@ const uint8_t bb_steam_service_uuid[16]={0x10,0x0f,0x6c,0x32,0x17,0x35,0x43,0x13
 static const uint8_t input_uuid[16]={0x10,0x0f,0x6c,0x33,0x17,0x35,0x43,0x13,0xb4,0x02,0x38,0x56,0x71,0x31,0xe5,0xf3};
 static const uint8_t feature_uuid[16]={0x10,0x0f,0x6c,0x34,0x17,0x35,0x43,0x13,0xb4,0x02,0x38,0x56,0x71,0x31,0xe5,0xf3};
 static uint8_t clear_mappings[]={0xc0,0x81,0x00};
-/* Disable gyro and built-in mouse emulation, expose both pads, remove margin.
+/* Default gyro off and disable built-in mouse emulation, expose both pads, disable absolute mouse smoothing.
  * No flash/firmware update commands are issued. */
 static uint8_t configure_pads[]={0xc0,0x87,0x0c,0x30,0,0,0x07,7,0,0x08,7,0,0x18,0,0};
 static bb_steam_ble_t* clients[2];
@@ -28,10 +28,12 @@ void bb_steam_ble_stop(bb_steam_ble_t* c) {
     if(c->slot<2 && clients[c->slot]==c)clients[c->slot]=NULL;
     memset(c,0,sizeof(*c));c->handle=HCI_CON_HANDLE_INVALID;
 }
-void bb_steam_ble_start(bb_steam_ble_t* c,uint8_t slot,hci_con_handle_t handle,uint32_t now,bb_steam_callback_t callback) {
+void bb_steam_ble_start(bb_steam_ble_t* c,uint8_t slot,hci_con_handle_t handle,uint32_t now,bool gyro,bb_steam_callback_t callback) {
     bb_steam_ble_stop(c);
     if(slot>=2||handle==HCI_CON_HANDLE_INVALID)return;
     c->slot=slot;c->handle=handle;c->callback=callback;c->started_at=c->step_at=c->next_action_at=now;
+    memcpy(c->configure,configure_pads,sizeof(configure_pads));
+    c->configure[4]=gyro?0x10:0; /* IMU mode: raw angular velocity only. */
     c->stage=BB_STEAM_SERVICE;clients[slot]=c;
     bb_steam_ble_poll(c,now);
 }
@@ -55,7 +57,7 @@ void bb_steam_ble_poll(bb_steam_ble_t* c,uint32_t now) {
         case BB_STEAM_CLEAR:
             status=gatt_client_write_value_of_characteristic(event_handler,c->handle,c->feature.value_handle,sizeof(clear_mappings),clear_mappings);break;
         case BB_STEAM_CONFIG:
-            status=gatt_client_write_value_of_characteristic(event_handler,c->handle,c->feature.value_handle,sizeof(configure_pads),configure_pads);break;
+            status=gatt_client_write_value_of_characteristic(event_handler,c->handle,c->feature.value_handle,sizeof(c->configure),c->configure);break;
         default:c->waiting=false;return;
     }
     if(status==ERROR_CODE_SUCCESS)return;

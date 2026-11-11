@@ -12,6 +12,8 @@ static unsigned frame(uint8_t* p,uint16_t flags,uint32_t buttons) {
     if(flags&0x80){put16(p+at,1234);put16(p+at+2,-2345);at+=4;}
     if(flags&0x100){put16(p+at,10000);put16(p+at+2,12000);at+=4;}
     if(flags&0x200){put16(p+at,1000);put16(p+at+2,2000);at+=4;}
+    if(flags&0x400){put16(p+at,1);put16(p+at+2,2);put16(p+at+4,3);at+=6;}
+    if(flags&0x800){put16(p+at,16384);put16(p+at+2,0);put16(p+at+4,16384);at+=6;}
     return at;
 }
 static int send(bb_steam_controller_t* s,const uint8_t* p,unsigned length,uint32_t now,bool mouse,bb_input_state_t* input,bb_pointer_sample_t* pointer) {
@@ -51,6 +53,37 @@ int main(void) {
     n=frame(p,0x10,1);assert(send(&s,p,n,201,false,&input,&pointer)==1); /* Resynchronizes on segment zero. */
     p[0]=5;assert(send(&s,p,n,202,false,&input,&pointer)==0); /* Non-input status. */
     assert(other.controls.stick_x==0&&other.controls.right_x==1000&&other.controls.buttons==0x100000u); /* Other controller was never overwritten. */
+    /* Gyro-only updates integrate once, with bounded timing and no replay. */
+    bb_steam_controller_t gyro={0};gyro.aim=bb_steam_aim_defaults();gyro.aim.enabled=1;
+    n=frame(p,0xc10,0);assert(send(&gyro,p,n,100,true,&input,&pointer)==1&&!pointer.x);
+    assert(send(&gyro,p,n,110,true,&input,&pointer)==1&&pointer.x==100&&pointer.y==-100);
+    n=frame(p,0x10,0);assert(send(&gyro,p,n,115,true,&input,&pointer)==1&&!pointer.x&&!pointer.y);
+    n=frame(p,0x800,0);assert(send(&gyro,p,n,120,true,&input,&pointer)==1&&pointer.x==100); /* No cached gyro on button-only frame. */
+    assert(send(&gyro,p,n,200,true,&input,&pointer)==1&&!pointer.x); /* No catch-up after radio gap. */
+    gyro.aim.sensitivity=50;gyro.aim.flags=3;
+    assert(send(&gyro,p,n,210,true,&input,&pointer)==1&&pointer.x==-50&&pointer.y==50);
+    gyro.aim.flags=0;gyro.aim.sensitivity=100;
+    n=frame(p,0x810,0x8000);assert(send(&gyro,p,n,220,true,&input,&pointer)==1&&!pointer.x&&!(input.buttons&(1u<<16)));
+    n=frame(p,0x810,0);assert(send(&gyro,p,n,230,true,&input,&pointer)==1&&!pointer.x);
+    assert(send(&gyro,p,n,240,true,&input,&pointer)==1&&pointer.x==100);
+    gyro.aim.activation=1;assert(send(&gyro,p,n,250,true,&input,&pointer)==1&&!pointer.x);
+    n=frame(p,0x810,0x100000);assert(send(&gyro,p,n,260,true,&input,&pointer)==1&&!pointer.x);
+    assert(send(&gyro,p,n,270,true,&input,&pointer)==1&&pointer.x==100);
+    gyro.aim.activation=2;n=frame(p,0x810,0);assert(send(&gyro,p,n,280,true,&input,&pointer)==1&&!pointer.x);
+    n=frame(p,0x810,2);assert(send(&gyro,p,n,290,true,&input,&pointer)==1&&!pointer.x);
+    assert(send(&gyro,p,n,300,true,&input,&pointer)==1&&pointer.x==100);
+    gyro.aim.flags=BB_AIM_TRIGGER_FIRE;n=frame(p,0x830,3);
+    assert(send(&gyro,p,n,310,true,&input,&pointer)==1&&pointer.buttons==1&&!input.rt&&!(input.buttons&(1u<<7)));
+    n=frame(p,0x830,2);p[6]=0;assert(send(&gyro,p,n,320,true,&input,&pointer)==1&&!pointer.buttons);
+    assert(send(&gyro,p,n,330,false,&input,&pointer)==1&&!pointer.x&&!pointer.buttons); /* Capture/mode gate. */
+    n=frame(p,0x830,2);assert(send(&gyro,p,n,340,true,&input,&pointer)==1&&!pointer.x);
+    /* Wrap-safe timer and fractional low-speed motion. */
+    gyro.gyro_at=0xfffffffau;gyro.gyro_active=true;gyro.aim.activation=0;gyro.aim.flags=0;
+    n=frame(p,0x800,0);assert(send(&gyro,p,n,4,true,&input,&pointer)==1&&pointer.x==100);
+    put16(p+2,100);put16(p+6,100);gyro.gyro_remainder_x=gyro.gyro_remainder_y=0;
+    int total=0;for(unsigned i=1;i<=20;i++){assert(send(&gyro,p,n,4+i*10,true,&input,&pointer)==1);total+=pointer.x;}
+    assert(total==12); /* Fractional movement accumulates without truncation loss. */
+    puts("Steam gyro: sensitivity, inversion, activation, pause/rebase, trigger fire, stale gaps, mode gate, fractions and wrap passed");
     /* Bounded malformed-input sweep for lengths, segment numbering and flags. */
     uint32_t random=7;
     for(unsigned i=0;i<10000;i++) {

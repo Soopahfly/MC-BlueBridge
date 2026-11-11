@@ -16,11 +16,12 @@ typedef struct bb_steam_ble {
     uint8_t slot,status;
     bb_steam_stage_t stage,failed_stage;
     bool waiting,listening;
+    uint8_t configure[15];
 } bb_steam_ble_t;
 
 extern const uint8_t bb_steam_service_uuid[16];
 void bb_steam_ble_start(bb_steam_ble_t* client,uint8_t slot,hci_con_handle_t handle,
-    uint32_t now,bb_steam_callback_t callback);
+    uint32_t now,bool gyro,bb_steam_callback_t callback);
 void bb_steam_ble_poll(bb_steam_ble_t* client,uint32_t now);
 void bb_steam_ble_stop(bb_steam_ble_t* client);
 const char* bb_steam_ble_stage_name(bb_steam_stage_t stage);

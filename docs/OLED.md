@@ -41,8 +41,8 @@ The Python script uses CC/gcc and the firmware C renderer. The web demo is a
 generated copy of the real config page with a mock transport. Its screenshot
 can be recaptured using a headless browser after the simulated connection loads.
 The preview UF2 and checksum are attached to the
-[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.1-oled-preview).
-See [release notes and pending hardware checks](RELEASE_NOTES-1.1.1-oled-preview.md).
+[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.2-oled-preview).
+See [release notes and pending hardware checks](RELEASE_NOTES-1.1.2-oled-preview.md).
 
 ## Live controller screen
 
@@ -330,7 +330,7 @@ the corresponding `build-no-oled` build. Extra options can be supplied through
 
 PEW settings persist per profile. The Live Controller/Status screen selection is
 currently session-only and resets to Live Controller after restarting. The old
-firmware cannot read schema 17; keep your pre-upgrade export if you intend to
+firmware cannot read schema 18; keep your pre-upgrade export if you intend to
 return to it. To use a trackball instead of the encoder, choose Trackball under Adapter
 controls in the local web GUI and save/restart.
 
@@ -348,16 +348,17 @@ BB1|request-id|OK|saved
 The command acts on the selected management controller. Invalid indices,
 boolean values and button numbers are rejected.
 
-Configuration schema **17** appends one saved DS4 mouse-enable byte to schema 16.
+Configuration schema **18** appends five Steam aiming settings bytes to schema 17.
+Schema 17 appended one saved DS4/Steam mouse-enable byte to schema 16.
 Schema 16 appended one OLED-enable byte to schema 15.
 Schema 15 appended one adapter-control selection byte to schema 14. Schema 14 already appended the 64-byte per-controller/profile PEW
 table to schema 13, preserving the original profile/controller binary layout.
-Schema 7-16 flash records migrate; schema 8-16 exports remain importable.
+Schema 7-17 flash records migrate; schema 8-17 exports remain importable.
 Schema-14 PEW settings survive migration. Older animation-less profiles start
 with the effect disabled. Duplicating copies it; deleting profiles/controllers
 shifts it with its owner, and new profile slots start off.
-The current payload is 11,047 bytes, within the reserved 16 KiB. Export a backup
-before flashing; earlier firmware will not understand schema 17.
+The current payload is 11,052 bytes, within the reserved 16 KiB. Export a backup
+before flashing; earlier firmware will not understand schema 18.
 
 `HELLO` also advertises `panel_configuration: true` and `oled_toggle: true`. The adapter-level commands
 are independent of controller selection:
@@ -502,7 +503,7 @@ can still overflow its eight button-state entries; large motion backlogs saturat
 or `TOUCH_MOUSE_SET|1` saves the setting and reports whether restart is needed.
 Changing USB output mode or multi-controller mode can make the saved mouse
 setting inactive without deleting it. Older schema imports default mouse off.
-Export your settings before upgrading; older firmware cannot load schema 17.
+Export your settings before upgrading; older firmware cannot load schema 18.
 
 This is software-tested preview support, not yet exercised on a physical DS4 or
 MiSTer. The built-in panel's PIM447 trackball remains a menu control; it is not
@@ -538,7 +539,8 @@ remapping but default to disabled, matching the existing extra-input policy.
 
 This first mouse implementation has fixed sensitivity (128 raw pad units per
 mouse count), left-click and drag. It has no right-click gesture, scroll,
-tap-to-click, rotation correction, acceleration, inertia, gyro or haptic feedback.
+tap-to-click, rotation correction, acceleration, inertia or haptic feedback.
+Optional gyro aiming is available separately in version 1.1.2 below.
 The adapter presents the same standard USB mouse interface used by DS4; response
 inside a particular MiSTer core depends on that core's mouse support. In multi
 mode, Steam remains a gamepad and the extra mouse interface is absent.
@@ -585,3 +587,56 @@ See [the hardware checklist](STEAM_PLAN.md). Protocol references:
 [Bluepad32's Steam setup](https://github.com/ricardoquesada/bluepad32/blob/main/src/components/bluepad32/parser/uni_hid_parser_steam.c).
 The Steam transport/decoder here are original implementations using protocol
 facts; external driver source has not been copied into this fork.
+
+
+### Optional Steam Controller gyro aiming (experimental 1.1.2)
+
+In the config app's **Mouse and aiming** section, enable mouse output, then
+**Enable gyro-to-mouse aiming**. Choose sensitivity from 1-200% (default 100%),
+optional horizontal/vertical inversion, and activation: always, while touching
+the right pad, or while holding the left trigger. Choose a hold-to-pause button
+(default left back grip), or None. Hold it while repositioning the controller;
+release it to resume aiming without replaying motion from the pause.
+
+Optionally enable **Use right trigger for mouse left-click / fire**. This consumes
+the gamepad right trigger while gyro mouse mode is enabled; the right pad press
+still supplies left-click. The pause button is also consumed from gamepad input.
+Pause affects gyro motion only, allowing right-pad fine adjustment. Left trigger
+activation remains available as a normal gamepad input. All settings are global,
+saved together with mouse output in one command, and applied after restart.
+Turning the top mouse checkbox off disables all pointer output; the gyro choices
+remain saved for next time. Older firmware hides the gyro controls.
+
+This is relative mouse aiming, with no knowledge of screen position. There is
+**no automatic crosshair recenter**, absolute light-gun tracking, accelerometer
+tilt aiming, DS4 gyro support or user gyro calibration in this preview. Reposition
+using pause and adjust sensitivity/inversion for the core. Core mouse support,
+axis direction, stationary drift and aiming accuracy all need hardware testing.
+Gyro and trigger-fire default off; upgrading preserves the prior mouse setting.
+Export a backup first: schema 18 is not readable by older firmware.
+
+Only enabled, eligible single-controller MiSTer configurations request raw gyro
+reports (IMU setting 0x30 = 0x0010). New gyro chunks are integrated using elapsed
+receive time and fractional accumulation. Button/pad-only packets never replay
+cached gyro rates. The first sample, paused/inactive samples, and gaps over 50 ms
+rebase motion; a small fixed raw deadband suppresses sensor noise. No timer polls
+are added to the input path. Sensitivity is initially 10 relative mouse counts
+per degree at 100%; actual on-screen travel also depends on the host/core.
+
+Protocol (HELLO capability `steam_gyro`):
+
+```
+BB1|1|STEAM_AIM_GET
+BB1|2|STEAM_AIM_SET|1|100|0|0|16|1
+```
+
+SET fields are enabled (0/1), sensitivity (1-200), activation (0=always,
+1=right-pad touch, 2=left trigger), flags (bit 0 invert X, bit 1 invert Y,
+bit 2 right-trigger left-click), canonical pause button (0-17 or 255=None),
+and master mouse enabled (0/1). Invalid values are rejected before saving.
+GET returns saved aiming fields and whether they differ from boot settings.
+The existing TOUCH_MOUSE_GET/SET commands remain available to older clients.
+
+Implementation references: [Valve's IMU mode definitions in SDL](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/steam/controller_constants.h)
+and [SDL's BLE gyro chunk and sensor scale handling](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_steam.c).
+The transport/parser and integration here are original implementation code.

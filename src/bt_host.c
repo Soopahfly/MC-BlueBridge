@@ -1653,7 +1653,7 @@ static void steam_client_event(bb_steam_ble_t* client,bb_steam_event_t event,uin
 static void start_steam_client(void) {
     ble_setup_started=true;ble_stage="steam_setup";
     bb_steam_ble_start(&host_slots[bb_slot_current()].steam_client,bb_slot_current(),le_handle,
-        btstack_run_loop_get_time_ms(),steam_client_event);
+        btstack_run_loop_get_time_ms(),bb_touch_mouse_current()&&!bb_multi_mode()&&bb_output_mode()==BB_OUTPUT_MISTER&&bb_steam_aim_current().enabled,steam_client_event);
 }
 
 static void ble_start_hid(void) {

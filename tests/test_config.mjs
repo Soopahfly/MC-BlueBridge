@@ -8,10 +8,11 @@ class Element {
   value=''; options=[]; checked=false; disabled=false; textContent='';
   replaceChildren(...options) { this.options=options; this.value=options[0]?.value ?? ''; }
 }
-const elements=Object.fromEntries(['connect','refresh','settings','controller','profile','enabled','fire','save','status','hardware','hardware-status','panel-input','save-hardware','oled-display','pointer-settings','pointer-status','touch-mouse','save-pointer','pointer-label','pointer-help'].map(id=>[id,new Element()]));
+const elements=Object.fromEntries(['connect','refresh','settings','controller','profile','enabled','fire','save','status','hardware','hardware-status','panel-input','save-hardware','oled-display','pointer-settings','pointer-status','touch-mouse','save-pointer','pointer-label','pointer-help','gyro-settings','gyro-enabled','gyro-sensitivity','gyro-activation','gyro-invert-x','gyro-invert-y','gyro-pause','gyro-fire'].map(id=>[id,new Element()]));
 elements['panel-input'].options=[{value:'none'},{value:'encoder'},{value:'trackball'}];
 let panelInput='none',activeInput='none',haveControllers=true;
-let steamSupport=true;
+let steamSupport=true,gyroSupport=true;
+let aim={enabled:0,sensitivity:100,activation:0,flags:0,pause_button:16};
 let oledEnabled=true,activeOled=true,touchMouse=false;
 let waiting, queue=[], stopped=false, saved, active=0, changedId=false;
 const commands=[];
@@ -28,7 +29,9 @@ const writer={releaseLock:()=>{},write:async bytes=>{
   const [,id,cmd,...args]=new TextDecoder().decode(bytes).trim().split('|');
   commands.push([cmd,...args]);
   let response;
-  if(cmd==='HELLO') response={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true,steam_ble:steamSupport}};
+  if(cmd==='HELLO') response={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true,steam_ble:steamSupport,steam_gyro:gyroSupport}};
+  else if(cmd==='STEAM_AIM_GET') response=aim;
+  else if(cmd==='STEAM_AIM_SET'){[aim.enabled,aim.sensitivity,aim.activation,aim.flags,aim.pause_button]=args.map(Number);touchMouse=args[5]==='1';response={restart_required:aim.enabled===1||touchMouse};}
   else if(cmd==='TOUCH_MOUSE_GET') response={enabled:touchMouse,active:false,available:true};
   else if(cmd==='TOUCH_MOUSE_SET'){touchMouse=args[0]==='1';response={restart_required:touchMouse};}
   else if(cmd==='PANEL_GET') response={input:panelInput,active_input:activeInput,panel_compiled:true,oled_enabled:oledEnabled,active_oled_enabled:activeOled,trackball_ready:activeInput==='trackball'};
@@ -92,7 +95,19 @@ assert.equal(touchMouse,true);assert.equal(elements['pointer-settings'].disabled
 assert.match(elements.status.textContent,/Reconnect/);
 
 await elements.connect.onclick();assert.match(elements['pointer-label'].textContent,/Steam/);
-steamSupport=false;await elements.connect.onclick();assert.match(elements['pointer-label'].textContent,/DualShock/);
+assert.equal(elements['gyro-settings'].hidden,false);
+assert.equal(elements['gyro-sensitivity'].value,'100');
+elements['gyro-sensitivity'].value='0';
+const before=commands.length;await elements['save-pointer'].onclick();
+assert.equal(commands.length,before);assert.match(elements.status.textContent,/1 to 200/);
+elements['gyro-sensitivity'].value='150';elements['gyro-enabled'].checked=true;
+elements['gyro-activation'].value='2';elements['gyro-fire'].checked=true;elements['gyro-invert-y'].checked=true;elements['gyro-pause'].value='17';
+await elements['save-pointer'].onclick();
+assert.deepEqual(aim,{enabled:1,sensitivity:150,activation:2,flags:6,pause_button:17});
+assert.equal(elements['pointer-settings'].disabled,true);
+await elements.connect.onclick();assert.equal(elements['gyro-enabled'].checked,true);assert.equal(elements['gyro-sensitivity'].value,'150');
+steamSupport=false;gyroSupport=false;await elements.connect.onclick();assert.match(elements['pointer-label'].textContent,/DualShock/);
 assert.match(elements['pointer-help'].textContent,/does not include Steam/);
+assert.equal(elements['gyro-settings'].hidden,true);
 await reader.cancel();
-console.log('config: profiles, physical controls, OLED, DS4 mouse checkbox/save/restart and reconnect passed');
+console.log('config: profiles, physical controls, OLED, mouse/gyro settings, validation, save/restart, reconnect and old-firmware fallback passed');

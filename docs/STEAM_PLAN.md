@@ -23,3 +23,17 @@ The new transport is checked with fake GATT events and the decoder with syntheti
 packets. These do not prove the exact behavior of the owner's controller firmware.
 No physical pairing, MiSTer enumeration, sensitivity or end-to-end timing is
 claimed yet. All existing DS4/OLED/encoder/trackball features remain in scope.
+
+
+## Optional gyro configuration (1.1.2)
+
+- [x] Add boot-applied schema-18 settings, defaults, strict validation and migration preserving mouse choice.
+- [x] Expose enable, sensitivity, inversion, activation, pause button and trigger-fire in the config app/demo.
+- [x] Save gyro/master pointer settings atomically and keep older firmware capability fallback.
+- [x] Request raw gyro only when enabled in eligible mouse mode; keep per-client BLE command buffers.
+- [x] Integrate fresh gyro chunks, fractional motion and wrap-safe bounded timing; rebase after pauses/gaps.
+- [x] Test sensitivity, inversion, activation, pause, capture/mode gating, trigger release and schema migration.
+- [x] Complete both firmware builds and static audits.
+- [ ] Publish 1.1.2 preview firmware to the owner's fork.
+- [ ] Hardware: verify gyro axes, rest drift, activation, pause/reposition and trigger click/drag/release.
+- [ ] Hardware: tune sensitivity in a mouse-capable MiSTer core and measure end-to-end latency.

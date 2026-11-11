@@ -159,6 +159,11 @@ bool bb_config_load(bb_config_t* cfg) {
         *cfg = *stored;
         return true;
     }
+    if(header->size==BB_CONFIG_V17_SIZE){
+        uint32_t schema;memcpy(&schema,payload,sizeof(schema));
+        if(schema!=17||header->checksum!=checksum_bytes(payload,header->size))return false;
+        memset(cfg,0,sizeof(*cfg));memcpy(cfg,payload,header->size);return true;
+    }
     if(header->size==BB_CONFIG_V16_SIZE){
         uint32_t schema;memcpy(&schema,payload,sizeof(schema));
         if(schema!=16||header->checksum!=checksum_bytes(payload,header->size))return false;

@@ -74,7 +74,7 @@ int main(void) {
     for(unsigned c=0;c<BB_MAX_CONTROLLERS;++c)
         for(unsigned p=0;p<BB_MAX_PROFILES;++p) assert(loaded.oled_pew[c][p]==0);
     bb_state_init(); bb_config_get(&loaded);
-    assert(loaded.schema==17 && loaded.controllers[0].native_product_id==2);
+    assert(loaded.schema==18 && loaded.controllers[0].native_product_id==2);
     assert(bb_panel_input_get()==BB_PANEL_ENCODER); /* Existing installations keep encoder behavior. */
     assert(bb_profile_oled_get(0)==0);
     /* Old exports are padded by the CDC importer before validation. */
@@ -136,5 +136,20 @@ int main(void) {
     bb_config_get(&loaded);loaded.touch_mouse_enabled=2;assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
     loaded.schema=16;assert(bb_config_import(&loaded,bb_config_checksum(&loaded)));
     assert(!bb_touch_mouse_get()&&!bb_oled_enabled_get());
+    bb_config_get(&loaded);loaded.schema=17;loaded.touch_mouse_enabled=1;
+    uint32_t v17_header[]={0x42424733u,BB_CONFIG_V17_SIZE,hash(&loaded,BB_CONFIG_V17_SIZE)};
+    memcpy(test_flash+base,v17_header,sizeof(v17_header));memcpy(test_flash+base+sizeof(v17_header),&loaded,BB_CONFIG_V17_SIZE);
+    bb_state_init();assert(bb_touch_mouse_current());
+    {bb_steam_aim_t a=bb_steam_aim_get();assert(!a.enabled&&a.sensitivity==100&&a.pause_button==16);
+    a.enabled=1;a.flags=7;a.sensitivity=150;a.activation=2;
+    assert(bb_steam_aim_set(a)&&bb_mode_restart_pending());
+    assert(!bb_steam_aim_current().enabled);
+    test_time+=250;bb_config_flush_pending();bb_state_init();
+    bb_steam_aim_t current=bb_steam_aim_current();assert(!memcmp(&a,&current,sizeof(a)));
+    a.sensitivity=0;assert(!bb_steam_aim_set(a));a.sensitivity=201;assert(!bb_steam_aim_set(a));
+    a.sensitivity=100;a.pause_button=18;assert(!bb_steam_aim_set(a));a.pause_button=255;assert(bb_steam_aim_set(a));
+    bb_config_get(&loaded);loaded.steam_aim.flags=8;assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    loaded.schema=17;assert(bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    assert(!bb_steam_aim_get().enabled&&bb_touch_mouse_get());}
     printf("state: edge events, profile lifecycle, flash round-trip and schema migration passed (%zu bytes)\n",sizeof(cfg));
 }
