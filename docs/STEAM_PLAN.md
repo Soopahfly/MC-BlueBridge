@@ -34,6 +34,6 @@ claimed yet. All existing DS4/OLED/encoder/trackball features remain in scope.
 - [x] Integrate fresh gyro chunks, fractional motion and wrap-safe bounded timing; rebase after pauses/gaps.
 - [x] Test sensitivity, inversion, activation, pause, capture/mode gating, trigger release and schema migration.
 - [x] Complete both firmware builds and static audits.
-- [ ] Publish 1.1.2 preview firmware to the owner's fork.
+- [x] Publish [1.1.2 preview firmware, config app and demo](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.2-oled-preview) to the owner's fork; verify uploaded checksums.
 - [ ] Hardware: verify gyro axes, rest drift, activation, pause/reposition and trigger click/drag/release.
 - [ ] Hardware: tune sensitivity in a mouse-capable MiSTer core and measure end-to-end latency.
