@@ -409,3 +409,5 @@ These components remain subject to their own upstream license terms. See `THIRD_
 The GPL-3.0 license applies to MC BlueBridge's own project code and does not replace or override the licenses of third-party components.
 
 [Bluetooth latency and reliability work plan](docs/LATENCY_PLAN.md)
+
+[Upstream 1.1.0 merge and touchpad checklist](docs/UPSTREAM_1.1.0_PLAN.md)
