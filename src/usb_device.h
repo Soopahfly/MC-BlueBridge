@@ -17,5 +17,5 @@ typedef struct {
 void bb_usb_queue_stats(uint8_t slot, bb_usb_queue_stats_t* out);
 
 bool bb_usb_touch_mouse_enabled(void);
-void bb_usb_touch_mouse_submit(bb_pointer_sample_t sample);
+void bb_usb_touch_mouse_submit(bb_pointer_sample_t sample,bool event_driven);
 void bb_usb_touch_mouse_release(void);

@@ -23,8 +23,10 @@ physical wiring and controller-latency validation remain outstanding.
 This fork now incorporates upstream **v1.1.0**, retaining the OLED, encoder,
 trackball, PEW, stack, save and USB queue fixes. It adds an optional **DS4
 Bluetooth touchpad to USB mouse** setting for single-controller MiSTer mode.
-This defaults off and awaits hardware validation. Original Steam Controller
-pad-to-mouse support remains a documented follow-up. See [the guide](docs/OLED.md).
+This defaults off and awaits hardware validation. Fork version **1.1.1** adds
+experimental original **Valve Steam Controller BLE** input and right-touchpad
+mouse support using the same saved checkbox. See [Steam setup and test plan](docs/STEAM_PLAN.md)
+and [the guide](docs/OLED.md).
 
 ### Screenshots and demonstrations
 
@@ -40,7 +42,7 @@ photographs. The web screenshot uses an explicitly simulated USB adapter.
 ![Web configuration with independent OLED and control selection](docs/images/web-config.png)
 
 [Interactive configuration demo](docs/demos/oled-config-demo.html) (serve locally;
-uses a simulated adapter) · [Preview firmware and release notes](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.0-oled-preview)
+uses a simulated adapter) · [Preview firmware and release notes](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.1-oled-preview)
 
 The preview firmware is for Pico 2 W. It is build/test validated and awaits
 physical flashing, PIM447/encoder/OLED checks and latency testing.

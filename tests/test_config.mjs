@@ -8,9 +8,10 @@ class Element {
   value=''; options=[]; checked=false; disabled=false; textContent='';
   replaceChildren(...options) { this.options=options; this.value=options[0]?.value ?? ''; }
 }
-const elements=Object.fromEntries(['connect','refresh','settings','controller','profile','enabled','fire','save','status','hardware','hardware-status','panel-input','save-hardware','oled-display','pointer-settings','pointer-status','touch-mouse','save-pointer'].map(id=>[id,new Element()]));
+const elements=Object.fromEntries(['connect','refresh','settings','controller','profile','enabled','fire','save','status','hardware','hardware-status','panel-input','save-hardware','oled-display','pointer-settings','pointer-status','touch-mouse','save-pointer','pointer-label','pointer-help'].map(id=>[id,new Element()]));
 elements['panel-input'].options=[{value:'none'},{value:'encoder'},{value:'trackball'}];
 let panelInput='none',activeInput='none',haveControllers=true;
+let steamSupport=true;
 let oledEnabled=true,activeOled=true,touchMouse=false;
 let waiting, queue=[], stopped=false, saved, active=0, changedId=false;
 const commands=[];
@@ -27,7 +28,7 @@ const writer={releaseLock:()=>{},write:async bytes=>{
   const [,id,cmd,...args]=new TextDecoder().decode(bytes).trim().split('|');
   commands.push([cmd,...args]);
   let response;
-  if(cmd==='HELLO') response={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true}};
+  if(cmd==='HELLO') response={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true,steam_ble:steamSupport}};
   else if(cmd==='TOUCH_MOUSE_GET') response={enabled:touchMouse,active:false,available:true};
   else if(cmd==='TOUCH_MOUSE_SET'){touchMouse=args[0]==='1';response={restart_required:touchMouse};}
   else if(cmd==='PANEL_GET') response={input:panelInput,active_input:activeInput,panel_compiled:true,oled_enabled:oledEnabled,active_oled_enabled:activeOled,trackball_ready:activeInput==='trackball'};
@@ -90,5 +91,8 @@ elements['touch-mouse'].checked=true;await elements['save-pointer'].onclick();
 assert.equal(touchMouse,true);assert.equal(elements['pointer-settings'].disabled,true);
 assert.match(elements.status.textContent,/Reconnect/);
 
+await elements.connect.onclick();assert.match(elements['pointer-label'].textContent,/Steam/);
+steamSupport=false;await elements.connect.onclick();assert.match(elements['pointer-label'].textContent,/DualShock/);
+assert.match(elements['pointer-help'].textContent,/does not include Steam/);
 await reader.cancel();
 console.log('config: profiles, physical controls, OLED, DS4 mouse checkbox/save/restart and reconnect passed');

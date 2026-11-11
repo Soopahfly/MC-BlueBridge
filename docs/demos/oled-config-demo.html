@@ -29,9 +29,9 @@
   <button id="save-hardware">Save and restart</button>
 </fieldset>
 <fieldset id="pointer-settings" disabled>
-  <legend>DS4 touchpad mouse</legend>
-  <label><input id="touch-mouse" type="checkbox">Use DualShock 4 touchpad as a USB mouse</label>
-  <p><small>Single-controller MiSTer mode only. Slide to move; press the touchpad to left-click. Gamepad sticks/buttons remain available. Steam Controller touchpads are not supported yet.</small></p>
+  <legend>Touchpad mouse</legend>
+  <label><input id="touch-mouse" type="checkbox"><span id="pointer-label">Use supported touchpads as a USB mouse</span></label>
+  <p><small id="pointer-help">Connect an adapter to check supported touchpad features.</small></p>
   <p id="pointer-status">Connect an adapter to read its settings.</p>
   <button id="save-pointer">Save mouse setting and restart</button>
 </fieldset>
@@ -55,7 +55,7 @@ const reader={read:()=>queue.length?Promise.resolve(queue.shift()):stopped?Promi
 const writer={releaseLock(){},async write(bytes){
   const [,id,command,...args]=new TextDecoder().decode(bytes).trim().split('|');
   let data,restart=false;
-  if(command==='HELLO')data={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true}};
+  if(command==='HELLO')data={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true,steam_ble:true}};
   else if(command==='TOUCH_MOUSE_GET')data={enabled:mouse,active:activeMouse,available:true};
   else if(command==='TOUCH_MOUSE_SET'){mouse=args[0]==='1';restart=mouse!==activeMouse;data={restart_required:restart};}
   else if(command==='PANEL_GET')data={input,active_input:activeInput,oled_enabled:oled,active_oled_enabled:activeOled,panel_compiled:true,trackball_ready:activeInput==='trackball'};
@@ -78,6 +78,7 @@ window.addEventListener('DOMContentLoaded',()=>{document.getElementById('connect
 const $ = id => document.getElementById(id);
 let port, reader, writer, reading, nextId = 0, pending = new Map(), busy = false;
 let loadedProfileId;
+let hasSteam=false;
 let hasTouchMouse=false,pointerLoaded=false;
 let hasPanel=false,hasOledToggle=false,panelLoaded=false,expectedRestart=false;
 const encoder = new TextEncoder();
@@ -152,6 +153,10 @@ async function loadProfiles() {
 async function loadPointer() {
   pointerLoaded=false;
   if(!hasTouchMouse){$('pointer-status').textContent='Update firmware to configure the DS4 touchpad mouse.';return;}
+  $('pointer-label').textContent=hasSteam?'Use DS4 / original Steam Controller touchpads as a USB mouse':'Use DualShock 4 touchpad as a USB mouse';
+  $('pointer-help').textContent=hasSteam
+    ? 'Single-controller MiSTer mode. DS4: slide and press the touchpad. Original Steam Controller: slide and press the right pad. Steam support is experimental and needs BLE firmware. Other gamepad controls remain available.'
+    : 'Single-controller MiSTer mode. Slide and press the DS4 touchpad for pointer and left-click. This firmware does not include Steam touchpad support.';
   const data=await command('TOUCH_MOUSE_GET');
   $('touch-mouse').checked=Boolean(data.enabled);pointerLoaded=true;
   $('pointer-status').textContent=data.available
@@ -227,6 +232,7 @@ $('connect').onclick = async () => {
     reading = receive();
     const hello = await command('HELLO');
     if (!hello.capabilities?.profile_oled) throw new Error('Install the OLED firmware before using this page.');
+    hasSteam=Boolean(hello.capabilities?.steam_ble);
     hasTouchMouse=Boolean(hello.capabilities?.touch_mouse);
     hasPanel=Boolean(hello.capabilities?.panel_configuration);
     hasOledToggle=Boolean(hello.capabilities?.oled_toggle);

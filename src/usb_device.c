@@ -33,22 +33,24 @@ static uint32_t restart_at;
 static uint32_t dualsense_last_send;
 static bb_mouse_queue_t mouse_queue;
 static uint32_t mouse_sample_at;
+static bool mouse_event_driven,mouse_motion_expired;
 
 bool bb_usb_touch_mouse_enabled(void) {
     if(!bb_touch_mouse_current()||bb_multi_mode()||bb_output_mode()!=BB_OUTPUT_MISTER)return false;
     bb_runtime_state_t state;bb_state_get(&state);
     return state.controller_connected && state.capture_mode==BB_CAPTURE_NONE;
 }
-void bb_usb_touch_mouse_submit(bb_pointer_sample_t sample) {
+void bb_usb_touch_mouse_submit(bb_pointer_sample_t sample,bool event_driven) {
     if(!usb_lock_ready)return;
     critical_section_enter_blocking(&usb_lock);
+    mouse_event_driven=event_driven;mouse_motion_expired=false;
     bb_mouse_queue_push(&mouse_queue,sample);
     mouse_sample_at=to_ms_since_boot(get_absolute_time());
     critical_section_exit(&usb_lock);
 }
 void bb_usb_touch_mouse_release(void) {
     if(!usb_lock_ready)return;
-    critical_section_enter_blocking(&usb_lock);bb_mouse_queue_release(&mouse_queue);
+    critical_section_enter_blocking(&usb_lock);mouse_event_driven=false;bb_mouse_queue_release(&mouse_queue);
     critical_section_exit(&usb_lock);
 }
 static void service_touch_mouse(void) {
@@ -57,7 +59,11 @@ static void service_touch_mouse(void) {
     uint32_t now=to_ms_since_boot(get_absolute_time()),token;
     bb_pointer_sample_t sample;
     critical_section_enter_blocking(&usb_lock);
-    if(!eligible||(uint32_t)(now-mouse_sample_at)>500u)bb_mouse_queue_release(&mouse_queue);
+    bool stale=(uint32_t)(now-mouse_sample_at)>500u;
+    if(!eligible||(!mouse_event_driven&&stale))bb_mouse_queue_release(&mouse_queue);
+    else if(stale&&!mouse_motion_expired) {
+        bb_mouse_queue_expire_motion(&mouse_queue);mouse_motion_expired=true;
+    }
     bool have=bb_mouse_queue_peek(&mouse_queue,&sample,&token);
     critical_section_exit(&usb_lock);
     /* Mouse is HID instance 1; gamepad remains instance 0 and is serviced first. */

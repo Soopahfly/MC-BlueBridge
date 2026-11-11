@@ -358,6 +358,16 @@ const char* bb_controller_button_label(bb_controller_kind_t kind, const char* na
             if (index == 9) return "Plus";
         }
     }
+    else if(kind==BB_CONTROLLER_STEAM) {
+        labels=xbox;
+        if(index==8)return "Back";
+        if(index==9)return "Start";
+        if(index==11)return "Right pad click";
+        if(index==12)return "Steam";
+        if(index==13)return "Left pad click";
+        if(index==16)return "Left grip";
+        if(index==17)return "Right grip";
+    }
     else if (kind == BB_CONTROLLER_STEAM2) labels = steam2;
     else if (kind == BB_CONTROLLER_SWITCH2_PRO) labels = switch2;
     else if (kind == BB_CONTROLLER_SWITCH_PRO || kind == BB_CONTROLLER_JOYCON_LEFT || kind == BB_CONTROLLER_JOYCON_RIGHT || kind == BB_CONTROLLER_NSO_GAMECUBE || kind == BB_CONTROLLER_WII_U_PRO) labels = nintendo;
@@ -460,6 +470,9 @@ bb_controller_capabilities_t bb_controller_capabilities(bb_controller_kind_t kin
             break;
         case BB_CONTROLLER_XBOX_ELITE:
             c.buttons = 0x000f1fffu;
+            break;
+        case BB_CONTROLLER_STEAM:
+            c.buttons=0x00033fffu;
             break;
         case BB_CONTROLLER_STEAM2:
             c.buttons = 0x000f3fffu;

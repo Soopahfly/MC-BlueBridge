@@ -12,7 +12,7 @@ const reader={read:()=>queue.length?Promise.resolve(queue.shift()):stopped?Promi
 const writer={releaseLock(){},async write(bytes){
   const [,id,command,...args]=new TextDecoder().decode(bytes).trim().split('|');
   let data,restart=false;
-  if(command==='HELLO')data={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true}};
+  if(command==='HELLO')data={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true,steam_ble:true}};
   else if(command==='TOUCH_MOUSE_GET')data={enabled:mouse,active:activeMouse,available:true};
   else if(command==='TOUCH_MOUSE_SET'){mouse=args[0]==='1';restart=mouse!==activeMouse;data={restart_required:restart};}
   else if(command==='PANEL_GET')data={input,active_input:activeInput,oled_enabled:oled,active_oled_enabled:activeOled,panel_compiled:true,trackball_ready:activeInput==='trackball'};

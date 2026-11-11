@@ -43,6 +43,10 @@ int main(void) {
     assert(bb_mouse_queue_peek(&queue,&sample,&token)&&sample.buttons==1);bb_mouse_queue_ack(&queue,token,sample);
     bb_mouse_queue_release(&queue);assert(bb_mouse_queue_peek(&queue,&sample,&token)&&!sample.buttons);
     bb_mouse_queue_ack(&queue,token,sample);assert(!queue.count&&!queue.last_buttons);
+    bb_mouse_queue_push(&queue,(bb_pointer_sample_t){.x=100});bb_mouse_queue_peek(&queue,&sample,&token);
+    bb_mouse_queue_expire_motion(&queue);bb_mouse_queue_ack(&queue,token,sample);
+    assert(bb_mouse_queue_peek(&queue,&sample,&token)&&!sample.x); /* Expiry invalidates an in-flight token. */
+    bb_mouse_queue_ack(&queue,token,sample);
     for(unsigned i=0;i<20;i++)bb_mouse_queue_push(&queue,(bb_pointer_sample_t){.buttons=i&1});
     assert(queue.count==8&&queue.overflows);
     puts("DS4 pointer: CRC/length/history checks, motion, lift/contact changes, click, wrap, failed sends and queue edges passed");

@@ -15,6 +15,8 @@ env["PATH"] = str(Path(cc).parent) + os.pathsep + env.get("PATH", "")
 out = root / "build-host"
 out.mkdir(exist_ok=True)
 for name, sources in {
+    "steam-ble": ["tests/test_steam_ble.c", "src/steam_ble.c"],
+    "steam-controller": ["tests/test_steam_controller.c", "src/steam_controller.c"],
     "touch-mouse": ["tests/test_touch_mouse.c", "src/touch_mouse.c"],
     "dualsense": ["tests/test_dualsense.c", "src/dualsense_device.c"],
     "input": ["tests/test_input.c", "src/controller_input.c", "src/bluebridge_state.c", "src/config_store.c"],
@@ -30,6 +32,7 @@ for name, sources in {
     "trackball-panel": ["tests/test_trackball_panel.c", "src/panel_controls.c", "src/oled_gamepad.c", "src/bluebridge_state.c", "src/config_store.c"],
 }.items():
     exe = out / (name + (".exe" if os.name == "nt" else ""))
-    subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-Itests/stubs", "-Isrc",
+    extra = ["-Itests/stubs/steam"] if name == "steam-ble" else []
+    subprocess.run([cc, "-std=c11", *extra, "-Wall", "-Wextra", "-Werror", "-Itests/stubs", "-Isrc",
                     *sources, "-o", str(exe)], cwd=root, env=env, check=True)
     subprocess.run([str(exe)], cwd=root, env=env, check=True)

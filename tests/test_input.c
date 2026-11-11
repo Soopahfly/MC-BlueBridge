@@ -42,5 +42,7 @@ int main(void) {
     bb_slot_enter(0);input=(bb_input_state_t){.rt=180};bb_input_submit(&input);
     assert(sent[0].rt>100&&sent[1].buttons==(1u<<3));
     bb_input_tick();assert(sent[1].buttons==(1u<<3));
+    assert(!strcmp(bb_controller_button_label(BB_CONTROLLER_STEAM,"Steam Controller",16),"Left grip"));
+    assert(bb_controller_capabilities(BB_CONTROLLER_STEAM,"Steam Controller").buttons&(1u<<17));
     puts("input: compact snapshots, identity/trigger mapping, deadzones, inversion, macros, capture and two-slot isolation passed");
 }

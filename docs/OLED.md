@@ -41,8 +41,8 @@ The Python script uses CC/gcc and the firmware C renderer. The web demo is a
 generated copy of the real config page with a mock transport. Its screenshot
 can be recaptured using a headless browser after the simulated connection loads.
 The preview UF2 and checksum are attached to the
-[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.0-oled-preview).
-See [release notes and pending hardware checks](RELEASE_NOTES-1.1.0-oled-preview.md).
+[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.1-oled-preview).
+See [release notes and pending hardware checks](RELEASE_NOTES-1.1.1-oled-preview.md).
 
 ## Live controller screen
 
@@ -508,18 +508,80 @@ This is software-tested preview support, not yet exercised on a physical DS4 or
 MiSTer. The built-in panel's PIM447 trackball remains a menu control; it is not
 changed into a game mouse.
 
-### Original Valve Steam Controller
+### Original Valve Steam Controller (experimental 1.1.1)
 
-The original two-round-pad Steam Controller is a separate follow-up. The current
-fork identifies Steam controllers but has no dedicated decoder/initialization
-for their proprietary BLE packets. A generic HID axis map cannot recover the
-right-pad contact state reliably. The intended approach is a BLE report decoder
-and controller initialization, with the right pad feeding this same USB mouse
-output and separately mapped mouse clicks. Bluetooth-capable controller firmware
-and physical pairing/report verification are prerequisites. Neither Steam pad is
-advertised as working in this release; the Valve USB dongle remains outside scope.
+This fork now includes a dedicated BLE transport and decoder for the original
+2015 Steam Controller with two round pads. It is a software-tested preview and
+has not yet been paired with a physical controller. It does not cover the newer
+Steam Controller, Steam Deck, the proprietary USB dongle, or general Bluetooth
+keyboards/mice. Upstream base remains 1.1.0; 1.1.1 is this fork's preview version.
 
-Protocol references: [Linux DS4 report layout](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c)
-and [SDL Steam Controller BLE handling](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_steam.c).
-Touch decoding here is an original implementation using report-layout facts;
-no Linux driver implementation was copied.
+1. Ensure your controller has Valve's BLE-capable firmware. See
+   [Valve's original-controller BLE guide](https://help.steampowered.com/en/faqs/view/1796-5FC3-88B3-C85F).
+   BlueBridge does not install controller firmware.
+2. Start BlueBridge pairing, then power the controller into Bluetooth pairing
+   using **Steam + Y**. Its proprietary receiver is not needed. **Steam + B**
+   reconnects to the last Bluetooth peer when that peer is available.
+3. Use single-controller MiSTer output. In the included web GUI, enable
+   **Use DS4 / original Steam Controller touchpads as a USB mouse**, save and
+   reconnect after restart. The existing schema-17 mouse setting is reused;
+   no settings migration is required from the 1.1.0 fork preview.
+4. Use the right pad to move the pointer and press it for left-click/drag.
+   Lift/reposition to rebase without a jump. Other controls remain gamepad input.
+
+With mouse disabled, the right pad acts as the right stick while touched.
+The left pad supplies D-pad directions with a fixed central deadzone, while the
+physical left stick stays independent. Left-pad click is input 13; right-pad
+click is input 11 (R3) when not consumed by mouse mode. The back grips are
+inputs 16 and 17, labelled Left grip and Right grip. They are available for
+remapping but default to disabled, matching the existing extra-input policy.
+
+This first mouse implementation has fixed sensitivity (128 raw pad units per
+mouse count), left-click and drag. It has no right-click gesture, scroll,
+tap-to-click, rotation correction, acceleration, inertia, gyro or haptic feedback.
+The adapter presents the same standard USB mouse interface used by DS4; response
+inside a particular MiSTer core depends on that core's mouse support. In multi
+mode, Steam remains a gamepad and the extra mouse interface is absent.
+
+Steam sends delta input reports. Button, trigger and axis fields absent from a
+packet retain their last state. Split BLE packets are assembled into a bounded
+144-byte buffer; out-of-order, timed-out or truncated sequences are rejected
+before changing input state. The parser accepts raw 19-byte GATT notifications
+and 20-byte report-ID-prefixed notifications. Setup discovers the Valve service,
+input and feature characteristics, enables input notifications, clears built-in
+button mappings and requests raw pad mode. Setup is asynchronous, with a 3 ms
+non-blocking configuration gap, a 3 s per-stage timeout and 10 s total timeout.
+Controller firmware/flash update commands are never sent.
+
+Unlike the continuously reporting DS4, an event-driven Steam controller may
+pause while a click is held. Mouse buttons therefore retain their state until
+a new button update, capture, or disconnect; lack of motion alone does not end a
+drag. Queued motion older than the idle window is discarded without inventing a
+button release. Finger motion rebases after 500 ms without pad samples. Radio
+loss release still depends on the Bluetooth stack reporting a lost link.
+
+For initial hardware testing, the serial protocol provides:
+
+```text
+BB1|1|STEAM_GET
+BB1|2|HID_DIAGNOSTICS|0
+```
+
+`STEAM_GET` reports slot, Steam transport selection, setup stage, last failure
+stage/status, notifications, completed input reports, malformed reports, and
+input/feature handles. Failure stage/status survive disconnect cleanup until the
+next Steam attempt. The HID diagnostic shows recent raw notification bytes
+while connected. A `ready` setup stage confirms successful GATT transactions,
+not physical button or pointer verification. Many notifications but zero input
+reports suggests a report-format or controller-mode mismatch; collect a sample
+before disconnecting. Do not assume a newer Steam model works because it exposes
+a similarly named service: both original input and feature characteristics must
+be found before this driver marks the connection ready.
+
+See [the hardware checklist](STEAM_PLAN.md). Protocol references:
+[SDL Steam BLE decoding](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_steam.c),
+[SDL's Valve GATT client](https://github.com/libsdl-org/SDL/blob/main/android-project/app/src/main/java/org/libsdl/app/HIDDeviceBLESteamController.java),
+[Valve packet structures](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/steam/controller_structs.h),
+[Bluepad32's Steam setup](https://github.com/ricardoquesada/bluepad32/blob/main/src/components/bluepad32/parser/uni_hid_parser_steam.c).
+The Steam transport/decoder here are original implementations using protocol
+facts; external driver source has not been copied into this fork.

@@ -3,6 +3,7 @@
 #include "bluebridge_state.h"
 #include "controller_driver.h"
 #include "controller_input.h"
+#include "steam_ble.h"
 #include "usb_device.h"
 #include "btstack.h"
 #include "btstack_version.h"
@@ -122,6 +123,11 @@ typedef struct {
     char ble_peer_name[32];
     uint32_t ble_attempt_count;
     bool le_custom_nintendo;
+    bool le_custom_steam;
+    bb_steam_ble_t steam_client;
+    uint32_t steam_reports,steam_bad_reports;
+    bb_steam_stage_t steam_failed_stage;
+    uint8_t steam_failure;
     bool le_gamecube;
     bd_addr_t pending_addr;
     bd_addr_type_t pending_addr_type;
@@ -337,6 +343,17 @@ bool bb_bt_host_diagnostics_slot(uint8_t slot, char* out, size_t size) {
     return written >= 0 && (size_t)written < size;
 }
 
+bool bb_bt_host_steam_diagnostics(char* out,size_t size) {
+    if(!out||size<320)return false;
+    const bb_host_context_t* c=&host_slots[bb_slot_current()];
+    const bb_steam_ble_t* client=&c->steam_client;
+    snprintf(out,size,"{\"slot\":%u,\"steam_transport\":%s,\"stage\":\"%s\",\"status\":%u,\"failed_stage\":\"%s\",\"notifications\":%lu,\"reports\":%lu,\"malformed_reports\":%lu,\"input_handle\":%u,\"feature_handle\":%u}",
+        bb_slot_current(),c->le_custom_steam?"true":"false",bb_steam_ble_stage_name(client->stage),c->steam_failure,bb_steam_ble_stage_name(c->steam_failed_stage),
+        (unsigned long)client->notifications,(unsigned long)c->steam_reports,(unsigned long)c->steam_bad_reports,
+        client->input.value_handle,client->feature.value_handle);
+    return true;
+}
+
 #define classic_attempt_started (host_slots[bb_slot_current()].classic_attempt_started)
 #define classic_attempt_active (host_slots[bb_slot_current()].classic_attempt_active)
 #define pending_classic_handle (host_slots[bb_slot_current()].pending_classic_handle)
@@ -392,6 +409,7 @@ bool bb_bt_host_diagnostics_slot(uint8_t slot, char* out, size_t size) {
 #define ble_authentication (host_slots[bb_slot_current()].ble_authentication)
 #define ble_peer_name (host_slots[bb_slot_current()].ble_peer_name)
 #define ble_attempt_count (host_slots[bb_slot_current()].ble_attempt_count)
+#define le_custom_steam (host_slots[bb_slot_current()].le_custom_steam)
 #define le_custom_nintendo (host_slots[bb_slot_current()].le_custom_nintendo)
 #define le_gamecube (host_slots[bb_slot_current()].le_gamecube)
 #define pending_addr (host_slots[bb_slot_current()].pending_addr)
@@ -1273,6 +1291,7 @@ static void controller_disconnected(bool link_closed) {
     ultimate2c_protocol_step = 0;
     ultimate2c_protocol_handle = 0;
     ble_security_retry_pending = ble_security_retry_pending && pairing && !manual_disconnect_pending;
+    bb_steam_ble_stop(&host_slots[bb_slot_current()].steam_client);
     if (le_custom_nintendo) gatt_client_stop_listening_for_characteristic_value_updates(&nintendo_listener);
     host_service_changed_ccc = 0;
     if (!other_ble_setup) {
@@ -1284,6 +1303,7 @@ static void controller_disconnected(bool link_closed) {
     if (!strcmp(ble_failed_stage, "none")) ble_stage = "disconnected";
     le_custom_nintendo = false;
     le_gamecube = false;
+    le_custom_steam = false;
     le_handle = HCI_CON_HANDLE_INVALID;
     classic_hid_cid = 0;
     classic_handle = HCI_CON_HANDLE_INVALID;
@@ -1414,6 +1434,17 @@ static void connect_ble(const uint8_t addr[6], bd_addr_type_t addr_type, const c
     pending_vid = vid;
     pending_pid = pid;
     le_custom_nintendo = custom_nintendo;
+    le_custom_steam=(vid==0x28de && (pid==0x1105||pid==0x1106)) ||
+        name_has(resolved_name,"steam controller") || name_has(resolved_name,"steamcontroller");
+    if(name_has(resolved_name,"steam controller 2")||name_has(resolved_name,"triton"))le_custom_steam=false;
+    if(le_custom_steam) {
+        bb_steam_ble_stop(&host_slots[bb_slot_current()].steam_client);
+        host_slots[bb_slot_current()].steam_reports=host_slots[bb_slot_current()].steam_bad_reports=0;
+        host_slots[bb_slot_current()].steam_failed_stage=BB_STEAM_IDLE;
+        host_slots[bb_slot_current()].steam_failure=0;
+        pending_vid=0x28de;pending_pid=0x1106;
+        copy_name(pending_name,sizeof(pending_name),"Steam Controller");
+    }
     le_gamecube = gamecube;
     uint8_t status = gap_connect(pending_addr, pending_addr_type);
     if (status != ERROR_CODE_SUCCESS) {
@@ -1421,6 +1452,7 @@ static void connect_ble(const uint8_t addr[6], bd_addr_type_t addr_type, const c
         sm_set_authentication_requirements(SM_AUTHREQ_BONDING | SM_AUTHREQ_SECURE_CONNECTION);
         if (ble_security_retry) sm_set_secure_connections_only_mode(BB_SM_DEFAULT_SC_ONLY);
         ble_connecting = false;
+        le_custom_steam = false;
         le_custom_nintendo = false;
         start_scans();
     }
@@ -1600,7 +1632,34 @@ static void ble_setup_fail(uint8_t status) {
     }
 }
 
+static void steam_client_event(bb_steam_ble_t* client,bb_steam_event_t event,uint8_t status,const uint8_t* data,uint16_t length) {
+    if(client->slot>=BB_MAX_SLOTS)return;
+    uint8_t previous=bb_slot_current();bb_slot_enter(client->slot);
+    if(!le_custom_steam || le_handle!=client->handle){bb_slot_enter(previous);return;}
+    if(event==BB_STEAM_EVENT_READY) {
+        activate_controller(pending_addr,pending_addr_type,0x28de,0x1106,"Steam Controller");
+    } else if(event==BB_STEAM_EVENT_INPUT) {
+        if(current_controller_index<0){bb_slot_enter(previous);return;}
+        int result=bb_driver_handle_steam_ble_report(data,length);
+        if(result==1){++host_slots[client->slot].steam_reports;last_controller_report_at=btstack_run_loop_get_time_ms();}
+        else if(result<0)++host_slots[client->slot].steam_bad_reports;
+    } else {
+        host_slots[client->slot].steam_failed_stage=client->failed_stage;
+        host_slots[client->slot].steam_failure=status;
+        ble_stage=bb_steam_ble_stage_name(client->failed_stage);ble_setup_fail(status);
+    }
+    bb_slot_enter(previous);
+}
+static void start_steam_client(void) {
+    ble_setup_started=true;ble_stage="steam_setup";
+    bb_steam_ble_start(&host_slots[bb_slot_current()].steam_client,bb_slot_current(),le_handle,
+        btstack_run_loop_get_time_ms(),steam_client_event);
+}
+
 static void ble_start_hid(void) {
+    if(pending_vid==0x28de&&(pending_pid==0x1105||pending_pid==0x1106)) {
+        le_custom_steam=true;start_steam_client();return;
+    }
     ble_stage = "hid_setup";
     uint8_t status = hids_host_connect(le_handle, hids_handler, HID_PROTOCOL_MODE_REPORT, &hids_cid);
     if (status != ERROR_CODE_SUCCESS) ble_setup_fail(status);
@@ -1771,7 +1830,9 @@ static void sm_handler_impl(uint8_t packet_type, uint16_t channel, uint8_t* pack
     }
     if (ble_setup_started) return;
     ble_setup_started = true;
-    if (le_custom_nintendo) {
+    if(le_custom_steam) {
+        start_steam_client();
+    } else if (le_custom_nintendo) {
         enable_nintendo_notifications();
     } else if (ble_is_ultimate2c()) {
         ultimate2c_protocol_step = 1;
@@ -2085,6 +2146,7 @@ static void hci_handler_impl(uint8_t packet_type, uint16_t channel, uint8_t* pac
             if (bb_multi_mode() && slot_for_address(addr) >= 0) break;
             adv_name(data, data_len, name, sizeof(name));
             bool hogp = ad_data_contains_uuid16(data_len, data, ORG_BLUETOOTH_SERVICE_HUMAN_INTERFACE_DEVICE);
+            bool steam_service=ad_data_contains_uuid128(data_len,data,(uint8_t*)bb_steam_service_uuid);
             bool nso_new = ad_data_contains_uuid128(data_len, data, (uint8_t*)nintendo_service_uuid);
             uint16_t adv_vid = 0;
             uint16_t adv_pid = 0;
@@ -2093,11 +2155,12 @@ static void hci_handler_impl(uint8_t packet_type, uint16_t channel, uint8_t* pac
             bool switch2_pro = adv_pid == 0x2069 || name_has(name, "switch 2 pro") || name_has(name, "pro controller 2");
             bool custom_nintendo = nso_new || nintendo_new || (!hogp && (switch2_pro || gamecube));
             uint8_t address_type = gap_event_advertising_report_get_address_type(packet);
-            if (!accept_ble_advertisement(addr, address_type, hogp, custom_nintendo)) break;
+            bool steam_candidate=steam_service||name_has(name,"steam controller")||name_has(name,"steamcontroller");
+            if (!accept_ble_advertisement(addr, address_type, hogp, custom_nintendo||steam_candidate)) break;
             if (custom_nintendo) {
                 if (!remembered_address(addr) && !pairing) break;
                 if (!name[0]) copy_name(name, sizeof(name), nintendo_ble_name(adv_pid));
-            } else if (!accept_candidate(addr, name, hogp)) {
+            } else if (!accept_candidate(addr, name, hogp||steam_candidate)) {
                 uint8_t type = gap_event_advertising_report_get_address_type(packet);
                 if (!pairing && !ble_address_lookup_pending && !reconnect_blocked(addr) && type == BD_ADDR_TYPE_LE_RANDOM && (addr[0] & 0xc0u) == 0x40u) {
                     memcpy(ble_address_lookup_addr, addr, 6);
@@ -2108,6 +2171,7 @@ static void hci_handler_impl(uint8_t packet_type, uint16_t channel, uint8_t* pac
                 }
                 break;
             }
+            if(steam_service){adv_vid=0x28de;adv_pid=0x1106;}
             connect_ble(addr, gap_event_advertising_report_get_address_type(packet), name, custom_nintendo, gamecube, adv_vid, adv_pid);
             break;
         }
@@ -2126,7 +2190,8 @@ static void hci_handler_impl(uint8_t packet_type, uint16_t channel, uint8_t* pac
                 }
                 le_handle = gap_subevent_le_connection_complete_get_connection_handle(packet);
                 ble_stage = le_custom_nintendo ? "notifications" : "security";
-                if (le_custom_nintendo) enable_nintendo_notifications();
+                if(le_custom_steam)start_steam_client();
+                else if (le_custom_nintendo) enable_nintendo_notifications();
                 else sm_request_pairing(le_handle);
             }
             break;
@@ -2194,6 +2259,7 @@ static void service_slot(void) {
     }
     uint32_t now = btstack_run_loop_get_time_ms();
     service_link_recovery(now);
+    if(le_custom_steam && le_handle!=HCI_CON_HANDLE_INVALID)bb_steam_ble_poll(&host_slots[bb_slot_current()].steam_client,now);
     service_classic_setup(now);
     service_dualsense_activation(now);
     if (multi_disconnect_requests[bb_slot_current()]) {

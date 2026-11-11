@@ -267,6 +267,9 @@ static void handle_command(char* text) {
     char* cmd = next_field(&cursor);
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
+    if(!strcmp(cmd,"STEAM_GET")) {
+        static char out[512];if(bb_bt_host_steam_diagnostics(out,sizeof(out)))send_ok(id,out);else send_err(id,"steam_diagnostics");return;
+    }
     if(!strcmp(cmd,"TOUCH_MOUSE_GET")) {
         char out[160];snprintf(out,sizeof(out),"{\"enabled\":%s,\"active\":%s,\"available\":%s}",
             bb_touch_mouse_get()?"true":"false",bb_touch_mouse_current()?"true":"false",
@@ -336,7 +339,7 @@ static void handle_command(char* text) {
         bb_adapter_name_get(adapter_name, sizeof(adapter_name));
         bb_adapter_custom_name_get(custom_name, sizeof(custom_name));
         pico_get_unique_board_id_string(adapter_id, sizeof(adapter_id));
-        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"profile_oled\":true,\"panel_configuration\":true,\"oled_toggle\":true,\"touch_mouse\":true,\"oled_panel\":%s},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BB_ENABLE_OLED ? "true" : "false", BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
+        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"profile_oled\":true,\"panel_configuration\":true,\"oled_toggle\":true,\"touch_mouse\":true,\"steam_ble\":true,\"oled_panel\":%s},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BB_ENABLE_OLED ? "true" : "false", BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
         send_ok(id, out);
         return;
     }

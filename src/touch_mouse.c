@@ -66,3 +66,9 @@ void bb_mouse_queue_release(bb_mouse_queue_t* q) {
     q->head=q->count=0;
     bb_mouse_queue_push(q,(bb_pointer_sample_t){0});
 }
+
+void bb_mouse_queue_expire_motion(bb_mouse_queue_t* q) {
+    for(unsigned i=0;i<q->count;i++) {
+        bb_mouse_event_t* e=&q->events[(q->head+i)%8];e->x=e->y=0;e->sequence=++q->sequence;
+    }
+}

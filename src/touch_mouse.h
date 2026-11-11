@@ -23,3 +23,5 @@ void bb_mouse_queue_push(bb_mouse_queue_t* q, bb_pointer_sample_t sample);
 bool bb_mouse_queue_peek(const bb_mouse_queue_t* q, bb_pointer_sample_t* out, uint32_t* token);
 void bb_mouse_queue_ack(bb_mouse_queue_t* q, uint32_t token, bb_pointer_sample_t sent);
 void bb_mouse_queue_release(bb_mouse_queue_t* q);
+
+void bb_mouse_queue_expire_motion(bb_mouse_queue_t* q);
