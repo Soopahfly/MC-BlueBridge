@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define BLUEBRIDGE_VERSION "1.0.6-oled"
+#define BLUEBRIDGE_VERSION "1.1.0-oled"
 #define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=16"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
 #define BB_CONFIG_SCHEMA 16
@@ -31,7 +31,8 @@ typedef enum {
     BB_OUTPUT_XINPUT = 2,
     BB_OUTPUT_GENERIC_HID = 3,
     BB_OUTPUT_SWITCH = 4,
-    BB_OUTPUT_XBOX360 = 5
+    BB_OUTPUT_XBOX360 = 5,
+    BB_OUTPUT_DUALSENSE = 6
 } bb_output_mode_t;
 
 typedef enum { BB_PANEL_NONE=0, BB_PANEL_ENCODER=1, BB_PANEL_TRACKBALL=2 } bb_panel_input_t;
@@ -42,6 +43,7 @@ bool bb_panel_settings_set(bb_panel_input_t input, bool oled_enabled);
 bool bb_oled_enabled_get(void);
 bool bb_oled_enabled_current(void);
 const char* bb_panel_input_name(bb_panel_input_t input);
+#define BB_OUTPUT_LAST BB_OUTPUT_DUALSENSE
 
 typedef struct __attribute__((packed)) {
     int8_t x;

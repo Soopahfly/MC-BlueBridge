@@ -122,5 +122,8 @@ int main(void) {
     bb_config_flush_pending();assert(bb_config_save_failures()==1); /* No hot retry loop. */
     test_flash_error=0;test_time+=1000;bb_config_flush_pending();
     assert(!bb_config_is_pending());bb_state_init();assert(bb_panel_input_current()==BB_PANEL_NONE);
+    assert(bb_output_mode_set(BB_OUTPUT_DUALSENSE));assert(bb_output_mode_value()==BB_OUTPUT_DUALSENSE);
+    test_time+=250;bb_config_flush_pending();bb_state_init();assert(bb_output_mode_value()==BB_OUTPUT_DUALSENSE);
+    assert(!bb_output_mode_set((bb_output_mode_t)(BB_OUTPUT_LAST+1)));
     printf("state: edge events, profile lifecycle, flash round-trip and schema migration passed (%zu bytes)\n",sizeof(cfg));
 }

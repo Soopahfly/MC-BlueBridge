@@ -106,7 +106,7 @@ bool bb_multi_mode_set(bool enabled) {
             }
             if (controller >= 0) config_state.active_controller = (uint8_t)controller;
             uint8_t mode = config_state.single_output_mode;
-            config_state.output_mode = mode >= BB_OUTPUT_MISTER && mode <= BB_OUTPUT_XBOX360 ? mode : BB_OUTPUT_MISTER;
+            config_state.output_mode = mode >= BB_OUTPUT_MISTER && mode <= BB_OUTPUT_LAST ? mode : BB_OUTPUT_MISTER;
         }
         config_state.multi_controller = enabled;
         request_save_locked();
@@ -191,11 +191,11 @@ void bb_state_init(void) {
         if(config_state.schema<15)config_state.panel_input=BB_PANEL_ENCODER;
         config_state.oled_enabled=1;
         config_state.schema = BB_CONFIG_SCHEMA;
-        if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_XBOX360) config_state.output_mode = BB_OUTPUT_MISTER;
+        if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_LAST) config_state.output_mode = BB_OUTPUT_MISTER;
         request_save_locked();
     } else if (config_state.schema != BB_CONFIG_SCHEMA) {
         init_defaults(&config_state);
-    } else if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_XBOX360) {
+    } else if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_LAST) {
         config_state.output_mode = BB_OUTPUT_MISTER;
         request_save_locked();
     }
@@ -1146,7 +1146,7 @@ bool bb_controller_select(uint8_t index) {
 }
 
 bool bb_output_mode_set(bb_output_mode_t mode) {
-    if (mode < BB_OUTPUT_MISTER || mode > BB_OUTPUT_XBOX360 || (boot_multi && mode != BB_OUTPUT_MISTER)) return false;
+    if (mode < BB_OUTPUT_MISTER || mode > BB_OUTPUT_LAST || (boot_multi && mode != BB_OUTPUT_MISTER)) return false;
     critical_section_enter_blocking(&lock);
     config_state.output_mode = (uint8_t)mode;
     request_save_locked();
@@ -1180,6 +1180,7 @@ const char* bb_output_mode_name(bb_output_mode_t mode) {
         case BB_OUTPUT_GENERIC_HID: return "Generic HID";
         case BB_OUTPUT_SWITCH: return "Nintendo Switch";
         case BB_OUTPUT_XBOX360: return "Xbox 360 (Console)";
+        case BB_OUTPUT_DUALSENSE: return "DualSense";
         default: return "MiSTer";
     }
 }
@@ -1219,7 +1220,7 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
         set_name(clean, sizeof(clean), value.controller_names[i], "");
         memcpy(value.controller_names[i], clean, sizeof(clean));
     }
-    if (value.output_mode < BB_OUTPUT_MISTER || value.output_mode > BB_OUTPUT_XBOX360) value.output_mode = BB_OUTPUT_MISTER;
+    if (value.output_mode < BB_OUTPUT_MISTER || value.output_mode > BB_OUTPUT_LAST) value.output_mode = BB_OUTPUT_MISTER;
     if (value.multi_controller > 1 || value.blocked_device_count > BB_MAX_BLOCKED_DEVICES) return false;
     if (value.multi_controller) value.output_mode = BB_OUTPUT_MISTER;
     if (value.multi_controller != boot_multi) mode_restart = true;

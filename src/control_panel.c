@@ -115,7 +115,7 @@ static void rotate(int delta) {
     if (!editing) { item = (unsigned)wrap((int)item + delta, ITEM_COUNT); return; }
     int count = 2;
     switch (item) {
-        case USB_MODE: count = 5; break;
+        case USB_MODE: count = BB_OUTPUT_LAST; break;
         case CONTROLLER: count = bb_controller_count(); break;
         case PROFILE: count = controller.profile_count; break;
         case TURBO_CONTROL: count = 3; break;
