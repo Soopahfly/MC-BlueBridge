@@ -12,7 +12,7 @@ Publication is restricted to **Soopahfly/MC-BlueBridge**. Upstream is read-only.
 - [x] Reuse the optional schema-17 mouse setting and update the web GUI/demo.
 - [x] Add synthetic transport/decoder regression tests and Steam setup diagnostics.
 - [x] Complete both firmware builds, full regression tests and static audits.
-- [ ] Publish preview firmware/checksums to the owner's fork.
+- [x] Publish preview firmware/checksums to the owner's fork: [v1.1.1-oled-preview](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.1-oled-preview).
 - [ ] Hardware: confirm BLE firmware and pair with Steam + Y, without the USB dongle.
 - [ ] Hardware: check each gamepad control, left pad directions and both grip mappings.
 - [ ] Hardware: check right-pad pointer, click/drag, pause during drag, lift/re-touch and capture release.
