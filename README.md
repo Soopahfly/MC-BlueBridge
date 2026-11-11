@@ -328,18 +328,27 @@ A separate BTstack checkout can be supplied through `BTSTACK_ROOT` when needed, 
 
 ## Limitations
 
-Controller support depends on the hardware, controller firmware and Bluetooth mode being used.
+Controller support depends on the hardware, controller firmware and Bluetooth mode being used. The DS4 and original Steam Controller additions below are implemented and software-tested, but physical pairing, MiSTer compatibility, gyro drift and end-to-end latency still need hardware testing.
 
-Some controller-specific features may not currently be available, including:
+### Addressed in this fork
 
-- Motion sensors
-- Touchpads
-- Adaptive triggers
-- Controller-specific lighting
+- **Touchpad mouse:** optional DS4 touchpad and original Steam Controller right-pad movement, left-click and drag are implemented. Mouse output requires single-controller MiSTer mode and must be enabled in the config app.
+- **Original Steam Controller:** dedicated BLE transport and gamepad decoding are implemented, including left-pad directions, grip inputs and right-pad mouse/right-stick behavior. Valve's BLE-capable controller firmware is required; its proprietary USB receiver is not used.
+- **Motion aiming:** optional original Steam Controller gyro-to-mouse aiming is implemented, with sensitivity, axis inversion, activation choices, hold-to-pause and right-trigger mouse fire available in the config app. It defaults off.
+
+### Remaining limitations
+
+- **Motion sensors:** DS4 gyro and general accelerometer/tilt mapping are not implemented. Steam gyro aiming sends relative mouse movement; it does not provide absolute light-gun positioning or automatic crosshair recentering. User gyro calibration is not included.
+- **Touchpad gestures:** no scroll, right-click gesture, tap-to-click, inertia or haptic feedback. Touchpad sensitivity is fixed; the configurable sensitivity applies to Steam gyro aiming.
+- **Other Steam devices:** the new BLE path targets the original 2015 controller (model 1001), not newer Steam controllers or Steam Deck.
+- **Adaptive triggers and controller-specific lighting:** not implemented by these additions.
+- **General Bluetooth keyboards and mice:** not implemented; the USB mouse interface is supplied by the supported controllers.
+
+A MiSTer core must support mouse input to use pointer/gyro aiming. Mouse output is absent in other USB output modes and multi-controller mode. Settings apply after restart. See [controller setup and pending hardware checks](docs/CONTROLLERS.md).
 
 Rumble availability also depends on both the connected controller and the selected USB output mode.
 
-Multi-controller mode is limited to two simultaneous controllers and may have slightly higher latency than single-controller mode.
+Multi-controller mode is limited to two simultaneous controllers and may have slightly higher latency than single-controller mode; this has not been measured for these additions.
 
 Xbox 360 (Console) and DualSense output are available in single-controller mode only. The management interface is unavailable while the native Xbox 360 USB mode is active.
 
