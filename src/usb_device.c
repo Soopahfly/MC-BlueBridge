@@ -31,6 +31,41 @@ static uint32_t switch_last_send;
 static bool restart_waiting;
 static uint32_t restart_at;
 static uint32_t dualsense_last_send;
+static bb_mouse_queue_t mouse_queue;
+static uint32_t mouse_sample_at;
+
+bool bb_usb_touch_mouse_enabled(void) {
+    if(!bb_touch_mouse_current()||bb_multi_mode()||bb_output_mode()!=BB_OUTPUT_MISTER)return false;
+    bb_runtime_state_t state;bb_state_get(&state);
+    return state.controller_connected && state.capture_mode==BB_CAPTURE_NONE;
+}
+void bb_usb_touch_mouse_submit(bb_pointer_sample_t sample) {
+    if(!usb_lock_ready)return;
+    critical_section_enter_blocking(&usb_lock);
+    bb_mouse_queue_push(&mouse_queue,sample);
+    mouse_sample_at=to_ms_since_boot(get_absolute_time());
+    critical_section_exit(&usb_lock);
+}
+void bb_usb_touch_mouse_release(void) {
+    if(!usb_lock_ready)return;
+    critical_section_enter_blocking(&usb_lock);bb_mouse_queue_release(&mouse_queue);
+    critical_section_exit(&usb_lock);
+}
+static void service_touch_mouse(void) {
+    if(!bb_touch_mouse_current()||bb_multi_mode()||bb_output_mode()!=BB_OUTPUT_MISTER)return;
+    bool eligible=bb_usb_touch_mouse_enabled();
+    uint32_t now=to_ms_since_boot(get_absolute_time()),token;
+    bb_pointer_sample_t sample;
+    critical_section_enter_blocking(&usb_lock);
+    if(!eligible||(uint32_t)(now-mouse_sample_at)>500u)bb_mouse_queue_release(&mouse_queue);
+    bool have=bb_mouse_queue_peek(&mouse_queue,&sample,&token);
+    critical_section_exit(&usb_lock);
+    /* Mouse is HID instance 1; gamepad remains instance 0 and is serviced first. */
+    if(have&&tud_hid_n_ready(1)&&tud_hid_n_mouse_report(1,0,sample.buttons,(int8_t)sample.x,(int8_t)sample.y,0,0)) {
+        critical_section_enter_blocking(&usb_lock);bb_mouse_queue_ack(&mouse_queue,token,sample);
+        critical_section_exit(&usb_lock);
+    }
+}
 
 static bool queue_push_locked(uint8_t slot, const bb_gamepad_report_t* report) {
     uint32_t now = to_ms_since_boot(get_absolute_time());
@@ -250,6 +285,7 @@ static void send_pending(void) {
 void bb_usb_service_pending(void) {
     for (usb_slot = 0; usb_slot < (bb_multi_mode() ? BB_MAX_SLOTS : 1); ++usb_slot) send_pending();
     usb_slot = 0;
+    service_touch_mouse();
 }
 
 static void feedback_reset_all(void) {
@@ -272,6 +308,7 @@ static void handle_reenumeration(void) {
     usb_mounted = false;
     bb_state_set_usb_ready(false);
     feedback_reset_all();
+    bb_usb_touch_mouse_release();
     tud_disconnect();
     sleep_ms(120);
     switch_last_send = 0;
@@ -322,6 +359,7 @@ void tud_mount_cb(void) {
     usb_mounted = true;
     bb_state_set_usb_ready(true);
     critical_section_enter_blocking(&usb_lock);
+    memset(&mouse_queue,0,sizeof(mouse_queue));
     for (unsigned i = 0; i < BB_MAX_SLOTS; ++i) {
         bb_queue_reset(&usb_queues[i],&latest_slots[i],to_ms_since_boot(get_absolute_time()));
     }

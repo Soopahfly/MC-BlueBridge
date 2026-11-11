@@ -74,7 +74,7 @@ int main(void) {
     for(unsigned c=0;c<BB_MAX_CONTROLLERS;++c)
         for(unsigned p=0;p<BB_MAX_PROFILES;++p) assert(loaded.oled_pew[c][p]==0);
     bb_state_init(); bb_config_get(&loaded);
-    assert(loaded.schema==16 && loaded.controllers[0].native_product_id==2);
+    assert(loaded.schema==17 && loaded.controllers[0].native_product_id==2);
     assert(bb_panel_input_get()==BB_PANEL_ENCODER); /* Existing installations keep encoder behavior. */
     assert(bb_profile_oled_get(0)==0);
     /* Old exports are padded by the CDC importer before validation. */
@@ -125,5 +125,16 @@ int main(void) {
     assert(bb_output_mode_set(BB_OUTPUT_DUALSENSE));assert(bb_output_mode_value()==BB_OUTPUT_DUALSENSE);
     test_time+=250;bb_config_flush_pending();bb_state_init();assert(bb_output_mode_value()==BB_OUTPUT_DUALSENSE);
     assert(!bb_output_mode_set((bb_output_mode_t)(BB_OUTPUT_LAST+1)));
+    /* Schema 16 preserves panel/OLED/profile fields and defaults mouse off. */
+    bb_config_get(&loaded);loaded.schema=16;loaded.oled_enabled=0;loaded.panel_input=BB_PANEL_TRACKBALL;
+    uint32_t v16_header[]={0x42424733u,BB_CONFIG_V16_SIZE,hash(&loaded,BB_CONFIG_V16_SIZE)};
+    memcpy(test_flash+base,v16_header,sizeof(v16_header));
+    memcpy(test_flash+base+sizeof(v16_header),&loaded,BB_CONFIG_V16_SIZE);
+    bb_state_init();assert(!bb_oled_enabled_get()&&bb_panel_input_current()==BB_PANEL_TRACKBALL&&!bb_touch_mouse_get());
+    bb_touch_mouse_set(true);assert(bb_touch_mouse_get()&&!bb_touch_mouse_current());
+    test_time+=250;bb_config_flush_pending();bb_state_init();assert(bb_touch_mouse_current());
+    bb_config_get(&loaded);loaded.touch_mouse_enabled=2;assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    loaded.schema=16;assert(bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    assert(!bb_touch_mouse_get()&&!bb_oled_enabled_get());
     printf("state: edge events, profile lifecycle, flash round-trip and schema migration passed (%zu bytes)\n",sizeof(cfg));
 }

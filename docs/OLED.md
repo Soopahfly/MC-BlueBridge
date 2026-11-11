@@ -41,8 +41,8 @@ The Python script uses CC/gcc and the firmware C renderer. The web demo is a
 generated copy of the real config page with a mock transport. Its screenshot
 can be recaptured using a headless browser after the simulated connection loads.
 The preview UF2 and checksum are attached to the
-[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.0.6-oled-preview).
-See [release notes and pending hardware checks](RELEASE_NOTES-1.0.6-oled-preview.md).
+[preview release](https://github.com/Soopahfly/MC-BlueBridge/releases/tag/v1.1.0-oled-preview).
+See [release notes and pending hardware checks](RELEASE_NOTES-1.1.0-oled-preview.md).
 
 ## Live controller screen
 
@@ -330,7 +330,7 @@ the corresponding `build-no-oled` build. Extra options can be supplied through
 
 PEW settings persist per profile. The Live Controller/Status screen selection is
 currently session-only and resets to Live Controller after restarting. The old
-firmware cannot read schema 16; keep your pre-upgrade export if you intend to
+firmware cannot read schema 17; keep your pre-upgrade export if you intend to
 return to it. To use a trackball instead of the encoder, choose Trackball under Adapter
 controls in the local web GUI and save/restart.
 
@@ -348,15 +348,16 @@ BB1|request-id|OK|saved
 The command acts on the selected management controller. Invalid indices,
 boolean values and button numbers are rejected.
 
-Configuration schema **16** appends one OLED-enable byte to schema 15.
+Configuration schema **17** appends one saved DS4 mouse-enable byte to schema 16.
+Schema 16 appended one OLED-enable byte to schema 15.
 Schema 15 appended one adapter-control selection byte to schema 14. Schema 14 already appended the 64-byte per-controller/profile PEW
 table to schema 13, preserving the original profile/controller binary layout.
-Schema 7-15 flash records migrate; schema 8-15 exports remain importable.
+Schema 7-16 flash records migrate; schema 8-16 exports remain importable.
 Schema-14 PEW settings survive migration. Older animation-less profiles start
 with the effect disabled. Duplicating copies it; deleting profiles/controllers
 shifts it with its owner, and new profile slots start off.
-The current payload is 11,046 bytes, within the reserved 16 KiB. Export a backup
-before flashing; earlier firmware will not understand schema 16.
+The current payload is 11,047 bytes, within the reserved 16 KiB. Export a backup
+before flashing; earlier firmware will not understand schema 17.
 
 `HELLO` also advertises `panel_configuration: true` and `oled_toggle: true`. The adapter-level commands
 are independent of controller selection:
@@ -472,3 +473,53 @@ button-to-output timing still need hardware testing.
 `tools/build.ps1` now runs `tools/check_stack.py` after building. The audit checks
 project frame reports and the two 4 KiB stack reservations; it cannot prove all
 SDK/libc/interrupt nesting or replace runtime high-water measurements.
+
+## Optional DualShock 4 touchpad mouse (1.1.0 fork)
+
+In the included USB web GUI, enable **Use DualShock 4 touchpad as a USB mouse**,
+then save and reconnect after restart. Default is off. A separate USB HID mouse
+interface is added alongside the existing gamepad only in single-controller
+MiSTer output mode. OLED and physical menu controls are independent of this.
+
+Slide one finger to move the pointer; lift/reposition without moving it. Press
+the touchpad for left-click, including click-and-drag. Touchpad click is consumed
+by the mouse while active; the other gamepad buttons and sticks remain available.
+There is no tap-to-click, right-click gesture, two-finger scrolling, acceleration
+or inertia in this first version. Movement uses a fixed four touch-coordinate
+units per mouse count. MiSTer core mouse support still determines what responds.
+
+Full DS4 Bluetooth reports (0x11, 78 bytes) are required. Short compatibility
+reports do not carry touch coordinates. CRC, touch-record counts, contact IDs,
+history timestamps and coordinate bounds are checked before emitting movement.
+New contacts, large jumps and stale baselines rebase without cursor jumps.
+Capture, disconnect and 500 ms without valid pointer samples clear pending mouse
+movement and release mouse buttons. A bounded queue preserves button edges and
+consumes relative motion only after TinyUSB accepts it. Sustained host stalls
+can still overflow its eight button-state entries; large motion backlogs saturate.
+
+`TOUCH_MOUSE_GET` reports saved `enabled`, boot `active`, and output-mode
+`available`; this is not a claim that a DS4 is connected. `TOUCH_MOUSE_SET|0`
+or `TOUCH_MOUSE_SET|1` saves the setting and reports whether restart is needed.
+Changing USB output mode or multi-controller mode can make the saved mouse
+setting inactive without deleting it. Older schema imports default mouse off.
+Export your settings before upgrading; older firmware cannot load schema 17.
+
+This is software-tested preview support, not yet exercised on a physical DS4 or
+MiSTer. The built-in panel's PIM447 trackball remains a menu control; it is not
+changed into a game mouse.
+
+### Original Valve Steam Controller
+
+The original two-round-pad Steam Controller is a separate follow-up. The current
+fork identifies Steam controllers but has no dedicated decoder/initialization
+for their proprietary BLE packets. A generic HID axis map cannot recover the
+right-pad contact state reliably. The intended approach is a BLE report decoder
+and controller initialization, with the right pad feeding this same USB mouse
+output and separately mapped mouse clicks. Bluetooth-capable controller firmware
+and physical pairing/report verification are prerequisites. Neither Steam pad is
+advertised as working in this release; the Valve USB dongle remains outside scope.
+
+Protocol references: [Linux DS4 report layout](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c)
+and [SDL Steam Controller BLE handling](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_steam.c).
+Touch decoding here is an original implementation using report-layout facts;
+no Linux driver implementation was copied.

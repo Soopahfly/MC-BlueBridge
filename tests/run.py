@@ -15,6 +15,7 @@ env["PATH"] = str(Path(cc).parent) + os.pathsep + env.get("PATH", "")
 out = root / "build-host"
 out.mkdir(exist_ok=True)
 for name, sources in {
+    "touch-mouse": ["tests/test_touch_mouse.c", "src/touch_mouse.c"],
     "dualsense": ["tests/test_dualsense.c", "src/dualsense_device.c"],
     "input": ["tests/test_input.c", "src/controller_input.c", "src/bluebridge_state.c", "src/config_store.c"],
     "usb-queue": ["tests/test_usb_queue.c", "src/usb_report_queue.c"],

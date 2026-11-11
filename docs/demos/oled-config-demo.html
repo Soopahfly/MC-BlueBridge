@@ -28,6 +28,13 @@
   <p id="hardware-status" role="status">Connect an adapter to read its settings.</p>
   <button id="save-hardware">Save and restart</button>
 </fieldset>
+<fieldset id="pointer-settings" disabled>
+  <legend>DS4 touchpad mouse</legend>
+  <label><input id="touch-mouse" type="checkbox">Use DualShock 4 touchpad as a USB mouse</label>
+  <p><small>Single-controller MiSTer mode only. Slide to move; press the touchpad to left-click. Gamepad sticks/buttons remain available. Steam Controller touchpads are not supported yet.</small></p>
+  <p id="pointer-status">Connect an adapter to read its settings.</p>
+  <button id="save-pointer">Save mouse setting and restart</button>
+</fieldset>
 <fieldset id="settings" disabled>
   <legend>PEW PEW animation</legend>
   <label for="controller">Controller</label><select id="controller"></select>
@@ -41,14 +48,16 @@
 
 <script>
 (()=>{
-let input='trackball',activeInput='trackball',oled=true,activeOled=true,queue=[],waiting,stopped=false;
+let input='trackball',activeInput='trackball',oled=true,activeOled=true,queue=[],waiting,stopped=false,mouse=false,activeMouse=false;
 const effects=[{enabled:false,fire:0},{enabled:true,fire:0}];
 function enqueue(text){const result={value:new TextEncoder().encode(text),done:false};if(waiting){const resolve=waiting;waiting=null;resolve(result);}else queue.push(result);}
 const reader={read:()=>queue.length?Promise.resolve(queue.shift()):stopped?Promise.resolve({done:true}):new Promise(resolve=>{waiting=resolve;}),releaseLock(){},async cancel(){stopped=true;if(waiting){waiting({done:true});waiting=null;}}};
 const writer={releaseLock(){},async write(bytes){
   const [,id,command,...args]=new TextDecoder().decode(bytes).trim().split('|');
   let data,restart=false;
-  if(command==='HELLO')data={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true}};
+  if(command==='HELLO')data={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true}};
+  else if(command==='TOUCH_MOUSE_GET')data={enabled:mouse,active:activeMouse,available:true};
+  else if(command==='TOUCH_MOUSE_SET'){mouse=args[0]==='1';restart=mouse!==activeMouse;data={restart_required:restart};}
   else if(command==='PANEL_GET')data={input,active_input:activeInput,oled_enabled:oled,active_oled_enabled:activeOled,panel_compiled:true,trackball_ready:activeInput==='trackball'};
   else if(command==='PANEL_SET'){input=args[0];oled=args[1]==='1';restart=input!==activeInput||oled!==activeOled;data={input,restart_required:restart};}
   else if(command==='CONTROLLERS')data={selected_index:0,controllers:[{index:0,name:'DualSense (simulated)'}]};
@@ -60,7 +69,7 @@ const writer={releaseLock(){},async write(bytes){
   enqueue('BB1|'+id+'|OK|'+JSON.stringify(data)+'\n');
   if(restart)setTimeout(()=>reader.cancel(),200);
 }};
-const port={readable:{getReader:()=>reader},writable:{getWriter:()=>writer},async open(){queue=[];stopped=false;activeInput=input;activeOled=oled;},async close(){}};
+const port={readable:{getReader:()=>reader},writable:{getWriter:()=>writer},async open(){queue=[];stopped=false;activeInput=input;activeOled=oled;activeMouse=mouse;},async close(){}};
 Object.defineProperty(navigator,'serial',{configurable:true,value:{requestPort:async()=>port}});
 window.addEventListener('DOMContentLoaded',()=>{document.getElementById('connect').click();});
 })();
@@ -69,6 +78,7 @@ window.addEventListener('DOMContentLoaded',()=>{document.getElementById('connect
 const $ = id => document.getElementById(id);
 let port, reader, writer, reading, nextId = 0, pending = new Map(), busy = false;
 let loadedProfileId;
+let hasTouchMouse=false,pointerLoaded=false;
 let hasPanel=false,hasOledToggle=false,panelLoaded=false,expectedRestart=false;
 const encoder = new TextEncoder();
 function status(message) { $('status').textContent = message; }
@@ -106,6 +116,7 @@ async function receive() {
     failPending('Adapter disconnected.');
     $('settings').disabled = true; $('refresh').disabled = true;
     $('hardware').disabled = true; panelLoaded=false;
+    $('pointer-settings').disabled=true;pointerLoaded=false;
     $('connect').disabled = false;
   }
 }
@@ -138,6 +149,15 @@ async function loadProfiles() {
   options($('fire'),data.labels.map((label,index) => [index,label]));
   await loadProfile();
 }
+async function loadPointer() {
+  pointerLoaded=false;
+  if(!hasTouchMouse){$('pointer-status').textContent='Update firmware to configure the DS4 touchpad mouse.';return;}
+  const data=await command('TOUCH_MOUSE_GET');
+  $('touch-mouse').checked=Boolean(data.enabled);pointerLoaded=true;
+  $('pointer-status').textContent=data.available
+    ? 'Saved: '+(data.enabled?'enabled':'disabled')+'. Active after restart: '+(data.active?'enabled':'disabled')+'.'
+    : 'Setting is saved, but mouse output requires single-controller MiSTer mode.';
+}
 async function loadPanel() {
   if(!hasPanel){
     panelLoaded=false;
@@ -157,6 +177,7 @@ async function loadPanel() {
   $('panel-input').options[2].disabled=!compiled;
 }
 async function refresh() {
+  await loadPointer();
   await loadPanel();
   const data = await command('CONTROLLERS');
   options($('controller'),data.controllers.map(c => [c.index,c.name]));
@@ -177,6 +198,7 @@ async function run(action) {
   busy = true;
   $('settings').disabled = true; $('refresh').disabled = true;
   $('hardware').disabled = true;
+  $('pointer-settings').disabled=true;
   let usable = true;
   try { await action(); }
   catch (error) { usable=false; status(error.message); }
@@ -185,6 +207,7 @@ async function run(action) {
     $('settings').disabled = !usable || !$('profile').options.length || !port?.readable || expectedRestart;
     $('refresh').disabled = !port?.readable || expectedRestart;
     $('hardware').disabled = !panelLoaded || !port?.readable || expectedRestart;
+    $('pointer-settings').disabled = !pointerLoaded || !port?.readable || expectedRestart;
   }
 }
 $('connect').onclick = async () => {
@@ -204,6 +227,7 @@ $('connect').onclick = async () => {
     reading = receive();
     const hello = await command('HELLO');
     if (!hello.capabilities?.profile_oled) throw new Error('Install the OLED firmware before using this page.');
+    hasTouchMouse=Boolean(hello.capabilities?.touch_mouse);
     hasPanel=Boolean(hello.capabilities?.panel_configuration);
     hasOledToggle=Boolean(hello.capabilities?.oled_toggle);
     $('refresh').disabled = false;
@@ -211,6 +235,12 @@ $('connect').onclick = async () => {
   } catch (error) { status(error.message); $('connect').disabled = false; }
 };
 $('refresh').onclick = () => run(refresh);
+$('save-pointer').onclick=()=>run(async()=>{
+  const result=await command('TOUCH_MOUSE_SET',$('touch-mouse').checked?'1':'0');
+  expectedRestart=Boolean(result.restart_required);
+  status(expectedRestart?'Mouse setting saved. Reconnect after the adapter restarts.':'Mouse setting saved.');
+  if(!expectedRestart)await loadPointer();
+});
 $('save-hardware').onclick = () => run(async () => {
   const args=[$('panel-input').value];
   if(hasOledToggle)args.push($('oled-display').checked?'1':'0');

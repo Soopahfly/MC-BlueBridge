@@ -8,10 +8,10 @@ class Element {
   value=''; options=[]; checked=false; disabled=false; textContent='';
   replaceChildren(...options) { this.options=options; this.value=options[0]?.value ?? ''; }
 }
-const elements=Object.fromEntries(['connect','refresh','settings','controller','profile','enabled','fire','save','status','hardware','hardware-status','panel-input','save-hardware','oled-display'].map(id=>[id,new Element()]));
+const elements=Object.fromEntries(['connect','refresh','settings','controller','profile','enabled','fire','save','status','hardware','hardware-status','panel-input','save-hardware','oled-display','pointer-settings','pointer-status','touch-mouse','save-pointer'].map(id=>[id,new Element()]));
 elements['panel-input'].options=[{value:'none'},{value:'encoder'},{value:'trackball'}];
 let panelInput='none',activeInput='none',haveControllers=true;
-let oledEnabled=true,activeOled=true;
+let oledEnabled=true,activeOled=true,touchMouse=false;
 let waiting, queue=[], stopped=false, saved, active=0, changedId=false;
 const commands=[];
 function reply(text) {
@@ -27,7 +27,9 @@ const writer={releaseLock:()=>{},write:async bytes=>{
   const [,id,cmd,...args]=new TextDecoder().decode(bytes).trim().split('|');
   commands.push([cmd,...args]);
   let response;
-  if(cmd==='HELLO') response={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true}};
+  if(cmd==='HELLO') response={capabilities:{profile_oled:true,panel_configuration:true,oled_toggle:true,touch_mouse:true}};
+  else if(cmd==='TOUCH_MOUSE_GET') response={enabled:touchMouse,active:false,available:true};
+  else if(cmd==='TOUCH_MOUSE_SET'){touchMouse=args[0]==='1';response={restart_required:touchMouse};}
   else if(cmd==='PANEL_GET') response={input:panelInput,active_input:activeInput,panel_compiled:true,oled_enabled:oledEnabled,active_oled_enabled:activeOled,trackball_ready:activeInput==='trackball'};
   else if(cmd==='PANEL_SET') {panelInput=args[0];oledEnabled=args[1]==='1';response={input:panelInput,restart_required:panelInput!==activeInput||oledEnabled!==activeOled};}
   else if(cmd==='CONTROLLERS') response={selected_index:0,controllers:haveControllers?[{index:0,name:'DualSense'}]:[]};
@@ -80,4 +82,13 @@ await elements.connect.onclick();assert.equal(elements['oled-display'].checked,f
 assert.equal(elements['panel-input'].options[2].disabled,false); /* Display off does not disable the control selector. */
 elements['oled-display'].checked=true;await elements['save-hardware'].onclick();assert.equal(oledEnabled,true);
 await reader.cancel();
-console.log('config: serial/profile checks, physical control selection, OLED on/off persistence and reconnect passed');
+
+
+await elements.connect.onclick();
+assert.equal(elements['pointer-settings'].disabled,false);
+elements['touch-mouse'].checked=true;await elements['save-pointer'].onclick();
+assert.equal(touchMouse,true);assert.equal(elements['pointer-settings'].disabled,true);
+assert.match(elements.status.textContent,/Reconnect/);
+
+await reader.cancel();
+console.log('config: profiles, physical controls, OLED, DS4 mouse checkbox/save/restart and reconnect passed');

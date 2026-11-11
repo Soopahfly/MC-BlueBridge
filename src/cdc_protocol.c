@@ -267,6 +267,18 @@ static void handle_command(char* text) {
     char* cmd = next_field(&cursor);
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
+    if(!strcmp(cmd,"TOUCH_MOUSE_GET")) {
+        char out[160];snprintf(out,sizeof(out),"{\"enabled\":%s,\"active\":%s,\"available\":%s}",
+            bb_touch_mouse_get()?"true":"false",bb_touch_mouse_current()?"true":"false",
+            !bb_multi_mode()&&bb_output_mode()==BB_OUTPUT_MISTER?"true":"false");send_ok(id,out);return;
+    }
+    if(!strcmp(cmd,"TOUCH_MOUSE_SET")) {
+        char* value=next_field(&cursor);
+        if(!value||cursor||(strcmp(value,"0")&&strcmp(value,"1"))){send_err(id,"touch_mouse");return;}
+        bb_touch_mouse_set(value[0]=='1');
+        char out[80];snprintf(out,sizeof(out),"{\"restart_required\":%s}",bb_touch_mouse_get()!=bb_touch_mouse_current()?"true":"false");
+        send_ok(id,out);return;
+    }
     if(!strcmp(cmd,"USB_QUEUE")) {
         static char out[512];
         size_t pos=(size_t)snprintf(out,sizeof(out),"{\"slots\":[");
@@ -324,7 +336,7 @@ static void handle_command(char* text) {
         bb_adapter_name_get(adapter_name, sizeof(adapter_name));
         bb_adapter_custom_name_get(custom_name, sizeof(custom_name));
         pico_get_unique_board_id_string(adapter_id, sizeof(adapter_id));
-        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"profile_oled\":true,\"panel_configuration\":true,\"oled_toggle\":true,\"oled_panel\":%s},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BB_ENABLE_OLED ? "true" : "false", BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
+        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"profile_oled\":true,\"panel_configuration\":true,\"oled_toggle\":true,\"touch_mouse\":true,\"oled_panel\":%s},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BB_ENABLE_OLED ? "true" : "false", BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
         send_ok(id, out);
         return;
     }
@@ -641,7 +653,7 @@ static void handle_command(char* text) {
         char* size = next_field(&cursor);
         char* checksum = next_field(&cursor);
         int schema_value = schema ? atoi(schema) : 0;
-        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 14 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V14_SIZE) || (schema_value == 15 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V15_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13 && schema_value != 14 && schema_value != 15))) {
+        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 14 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V14_SIZE) || (schema_value == 15 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V15_SIZE) || (schema_value == 16 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V16_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13 && schema_value != 14 && schema_value != 15 && schema_value != 16))) {
             import_active = false;
             send_err(id, "config_header");
             return;

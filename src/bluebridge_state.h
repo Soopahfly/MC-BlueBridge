@@ -4,9 +4,9 @@
 #include <stdint.h>
 
 #define BLUEBRIDGE_VERSION "1.1.0-oled"
-#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=16"
+#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=17"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
-#define BB_CONFIG_SCHEMA 16
+#define BB_CONFIG_SCHEMA 17
 #define BB_MAX_NAME 32
 #define BB_MAX_PROFILE_NAME 24
 #define BB_MAX_CONTROLLERS 8
@@ -41,6 +41,9 @@ bb_panel_input_t bb_panel_input_current(void);
 bool bb_panel_input_set(bb_panel_input_t input);
 bool bb_panel_settings_set(bb_panel_input_t input, bool oled_enabled);
 bool bb_oled_enabled_get(void);
+bool bb_touch_mouse_get(void);
+bool bb_touch_mouse_current(void);
+void bb_touch_mouse_set(bool enabled);
 bool bb_oled_enabled_current(void);
 const char* bb_panel_input_name(bb_panel_input_t input);
 #define BB_OUTPUT_LAST BB_OUTPUT_DUALSENSE
@@ -122,8 +125,10 @@ typedef struct __attribute__((packed)) {
     uint8_t oled_pew[BB_MAX_CONTROLLERS][BB_MAX_PROFILES];
     uint8_t panel_input;
     uint8_t oled_enabled;
+    uint8_t touch_mouse_enabled;
 } bb_config_t;
 
+#define BB_CONFIG_V16_SIZE offsetof(bb_config_t, touch_mouse_enabled)
 #define BB_CONFIG_V15_SIZE offsetof(bb_config_t, oled_enabled)
 #define BB_CONFIG_V14_SIZE offsetof(bb_config_t, panel_input)
 #define BB_CONFIG_V13_SIZE offsetof(bb_config_t, oled_pew)

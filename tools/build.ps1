@@ -35,4 +35,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Firmware build failed.' }
     & python tools/check_stack.py $BuildDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Static stack audit failed.' }
+    & python tools/check_usb_descriptors.py $BuildDirectory
+    if ($LASTEXITCODE -ne 0) { throw 'USB descriptor audit failed.' }
 } finally { Pop-Location }

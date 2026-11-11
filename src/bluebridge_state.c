@@ -12,6 +12,7 @@ static uint8_t io_slot;
 static bool boot_multi;
 static bb_panel_input_t boot_panel_input;
 static bool boot_oled_enabled;
+static bool boot_touch_mouse;
 static volatile bool mode_restart;
 #define runtime_state runtime_slots[bb_slot_current()]
 static bb_config_t config_state;
@@ -34,6 +35,17 @@ static uint32_t capture_masks[BB_MAX_SLOTS];
 #define capture_button_mask capture_masks[bb_slot_current()]
 static int management_controller_index = -1;
 
+bool bb_touch_mouse_current(void){return boot_touch_mouse;}
+bool bb_touch_mouse_get(void){
+    critical_section_enter_blocking(&lock);bool enabled=config_state.touch_mouse_enabled!=0;
+    critical_section_exit(&lock);return enabled;
+}
+void bb_touch_mouse_set(bool enabled){
+    critical_section_enter_blocking(&lock);
+    if(config_state.touch_mouse_enabled!=enabled){config_state.touch_mouse_enabled=enabled;request_save_locked();}
+    if(enabled!=boot_touch_mouse)mode_restart=true;
+    critical_section_exit(&lock);
+}
 bool bb_multi_mode(void) { return boot_multi; }
 bool bb_mode_restart_pending(void) { return mode_restart; }
 bb_panel_input_t bb_panel_input_current(void) { return boot_panel_input; }
@@ -187,9 +199,10 @@ void bb_state_init(void) {
     }
     if (!bb_config_load(&config_state)) {
         init_defaults(&config_state);
-    } else if (config_state.schema >= 8 && config_state.schema <= 15) {
+    } else if (config_state.schema >= 8 && config_state.schema <= 16) {
         if(config_state.schema<15)config_state.panel_input=BB_PANEL_ENCODER;
-        config_state.oled_enabled=1;
+        if(config_state.schema<16)config_state.oled_enabled=1;
+        config_state.touch_mouse_enabled=0;
         config_state.schema = BB_CONFIG_SCHEMA;
         if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_LAST) config_state.output_mode = BB_OUTPUT_MISTER;
         request_save_locked();
@@ -199,6 +212,8 @@ void bb_state_init(void) {
         config_state.output_mode = BB_OUTPUT_MISTER;
         request_save_locked();
     }
+    boot_touch_mouse=config_state.touch_mouse_enabled==1;
+    if(config_state.touch_mouse_enabled>1){config_state.touch_mouse_enabled=0;request_save_locked();}
     boot_multi = config_state.multi_controller == 1;
     if(config_state.panel_input>BB_PANEL_TRACKBALL){config_state.panel_input=BB_PANEL_NONE;request_save_locked();}
     boot_panel_input=(bb_panel_input_t)config_state.panel_input;
@@ -1197,6 +1212,8 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     static bb_config_t value;
     value = *cfg;
     value.schema = BB_CONFIG_SCHEMA;
+    if(cfg->schema<17)value.touch_mouse_enabled=0;
+    if(value.touch_mouse_enabled>1)return false;
     if(cfg->schema<16)value.oled_enabled=1;
     if(value.oled_enabled>1)return false;
     if(cfg->schema<15)value.panel_input=BB_PANEL_ENCODER;
@@ -1226,6 +1243,7 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     if (value.multi_controller != boot_multi) mode_restart = true;
     if(value.panel_input!=(uint8_t)boot_panel_input)mode_restart=true;
     if((value.oled_enabled!=0)!=boot_oled_enabled)mode_restart=true;
+    if((value.touch_mouse_enabled!=0)!=boot_touch_mouse)mode_restart=true;
     bb_config_set(&value, true);
     return true;
 }
@@ -1236,6 +1254,7 @@ bool bb_config_reset(void) {
     if (boot_multi) mode_restart = true;
     if(boot_panel_input!=BB_PANEL_NONE)mode_restart=true;
     if(!boot_oled_enabled)mode_restart=true;
+    if(boot_touch_mouse)mode_restart=true;
     bb_config_set(&fresh, true);
     return true;
 }
