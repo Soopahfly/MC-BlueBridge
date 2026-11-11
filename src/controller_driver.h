@@ -1,10 +1,13 @@
 #pragma once
 #include "controller_input.h"
+#include "ds4_motion.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 void bb_driver_reset(void);
+bool bb_driver_ds4_calibration(const uint8_t* report,uint16_t length);
+bool bb_driver_ds4_motion_snapshot(bb_ds4_motion_t* out);
 void bb_driver_set_identity(const bb_controller_identity_t* identity);
 void bb_driver_set_hid_descriptor(const uint8_t* descriptor, uint16_t length);
 bool bb_driver_handle_xbox_ble_report(const uint8_t* report, uint16_t length);

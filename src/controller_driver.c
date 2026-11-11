@@ -4,6 +4,8 @@
 #include "btstack.h"
 #include "pico/stdlib.h"
 #include "steam_controller.h"
+#include "ds4_motion.h"
+#include "pico/critical_section.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -25,6 +27,7 @@
 
 typedef struct {
     bb_ds4_pointer_t pointer;
+    bb_ds4_motion_t ds4_motion;
     bb_steam_controller_t steam;
     uint8_t early_arcade_battery_report[2];
     bool have_early_arcade_battery_report;
@@ -58,6 +61,8 @@ static bb_driver_context_t driver_slots[BB_MAX_SLOTS] = {
 {.diagnostic_battery_request_status=-1,.diagnostic_battery_status=-1,.gamecube_trigger_rest={255,255},.n64_center={2048,2048},.n64_below={2047,2047},.n64_above={2047,2047}},
 {.diagnostic_battery_request_status=-1,.diagnostic_battery_status=-1,.gamecube_trigger_rest={255,255},.n64_center={2048,2048},.n64_below={2047,2047},.n64_above={2047,2047}}
 };
+static critical_section_t ds4_motion_lock;
+static volatile bool ds4_motion_lock_ready;
 #define early_arcade_battery_report (driver_slots[bb_slot_current()].early_arcade_battery_report)
 #define have_early_arcade_battery_report (driver_slots[bb_slot_current()].have_early_arcade_battery_report)
 #define diagnostic_battery_request_status (driver_slots[bb_slot_current()].diagnostic_battery_request_status)
@@ -773,21 +778,30 @@ static bool parse_ds4_common(const uint8_t* p, uint16_t len, uint8_t base, bool 
         uint8_t pct = level >= 10 ? 100 : (uint8_t)(level * 10u + 5u);
         bb_state_update_battery(true, pct, (v & 0x10) ? 2 : 1);
     }
-    if(bb_usb_touch_mouse_enabled()) {
-        bb_pointer_sample_t pointer;
-        if(bb_ds4_pointer_decode(&driver_slots[bb_slot_current()].pointer,p,len,
-            to_ms_since_boot(get_absolute_time()),&pointer)) {
-            bb_usb_touch_mouse_submit(pointer,false);
-            s.buttons&=~(1u<<13); /* Touchpad click belongs to the mouse in this mode. */
-        }
-    } else memset(&driver_slots[bb_slot_current()].pointer,0,sizeof(bb_ds4_pointer_t));
+    bool mouse=bb_usb_touch_mouse_enabled();
+    bb_pointer_sample_t pointer={0};
+    bb_driver_context_t* slot=&driver_slots[bb_slot_current()];
+    if(mouse) {
+        if(bb_ds4_pointer_decode(&slot->pointer,p,len,to_ms_since_boot(get_absolute_time()),&pointer))
+            s.buttons&=~(1u<<13); /* Touchpad press belongs to mouse mode. */
+    } else memset(&slot->pointer,0,sizeof(slot->pointer));
+    if(ds4_motion_lock_ready){
+        critical_section_enter_blocking(&ds4_motion_lock);
+        bb_ds4_motion_decode(&slot->ds4_motion,p,len,to_ms_since_boot(get_absolute_time()),
+            bb_ds4_aim_current(),mouse,slot->pointer.touching,&s,&pointer);
+        critical_section_exit(&ds4_motion_lock);
+    }
+    if(mouse)bb_usb_touch_mouse_submit(pointer,false);
     submit_state(&s);
     return true;
 }
 
 static bool parse_ds4_bt(const uint8_t* p, uint16_t len) {
     if (!p || !len) return false;
-    if (p[0] == 0x11 && len >= 12) return parse_ds4_common(p, len, 3, true);
+    if(p[0]==0x11){
+        if(len!=78||p[35]>4||!bb_hid_crc_valid(p,len,0xa1))return true; /* Ignore malformed full reports. */
+        return parse_ds4_common(p,len,3,true);
+    }
     if (p[0] == 0x01 && len >= 10) return parse_ds4_common(p, len, 1, false);
     return false;
 }
@@ -1362,7 +1376,22 @@ static bool parse_8bitdo_arcade(const uint8_t* report, uint16_t length) {
     return parse_generic(report, length);
 }
 
+bool bb_driver_ds4_calibration(const uint8_t* p,uint16_t length){
+    if(!ds4_motion_lock_ready)return false;
+    critical_section_enter_blocking(&ds4_motion_lock);
+    bool valid=bb_ds4_motion_calibrate(&driver_slots[bb_slot_current()].ds4_motion,p,length);
+    critical_section_exit(&ds4_motion_lock);return valid;
+}
+bool bb_driver_ds4_motion_snapshot(bb_ds4_motion_t* out){
+    if(!out||!ds4_motion_lock_ready)return false;
+    critical_section_enter_blocking(&ds4_motion_lock);*out=driver_slots[bb_slot_current()].ds4_motion;
+    critical_section_exit(&ds4_motion_lock);return true;
+}
 void bb_driver_reset(void) {
+    if(!ds4_motion_lock_ready){critical_section_init(&ds4_motion_lock);ds4_motion_lock_ready=true;}
+    critical_section_enter_blocking(&ds4_motion_lock);
+    memset(&driver_slots[bb_slot_current()].ds4_motion,0,sizeof(bb_ds4_motion_t));
+    critical_section_exit(&ds4_motion_lock);
     bb_usb_touch_mouse_release();
     memset(&driver_slots[bb_slot_current()].pointer,0,sizeof(bb_ds4_pointer_t));
     memset(&driver_slots[bb_slot_current()].steam,0,sizeof(bb_steam_controller_t));

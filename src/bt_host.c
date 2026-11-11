@@ -1842,7 +1842,7 @@ static void sm_handler_impl(uint8_t packet_type, uint16_t channel, uint8_t* pack
     }
 }
 
-static void classic_hid_event(uint8_t* packet) {
+static void classic_hid_event(uint8_t* packet,uint16_t size) {
     switch (hci_event_hid_meta_get_subevent_code(packet)) {
         case HID_SUBEVENT_INCOMING_CONNECTION: {
             if (hid_subevent_incoming_connection_get_status(packet) != ERROR_CODE_SUCCESS) break;
@@ -1963,10 +1963,15 @@ static void classic_hid_event(uint8_t* packet) {
             }
             break;
         case HID_SUBEVENT_GET_REPORT_RESPONSE: {
+            if(size<8 || hid_subevent_get_report_response_get_report_len(packet)>size-8u)break;
             if (hid_subevent_get_report_response_get_hid_cid(packet) == classic_hid_cid &&
                 current_identity.kind == BB_CONTROLLER_DUALSHOCK4 && ds4_activation_step == 2) {
-                ds4_activation_step = 3;
-                ds4_activation_pending = false;
+                uint8_t status=hid_subevent_get_report_response_get_handshake_status(packet);
+                bool calibrated=bb_driver_ds4_calibration(status?NULL:hid_subevent_get_report_response_get_report(packet),
+                    status?0:hid_subevent_get_report_response_get_report_len(packet));
+                ds4_activation_step=calibrated?3:1;
+                ds4_activation_pending=!calibrated;
+                ds4_activation_at=btstack_run_loop_get_time_ms()+200u;
                 break;
             }
             if (hid_subevent_get_report_response_get_hid_cid(packet) != classic_hid_cid ||
@@ -2191,7 +2196,7 @@ static void hci_handler_impl(uint8_t packet_type, uint16_t channel, uint8_t* pac
             }
             break;
         case HCI_EVENT_HID_META:
-            classic_hid_event(packet);
+            classic_hid_event(packet,size);
             break;
         case HCI_EVENT_USER_CONFIRMATION_REQUEST: {
             bd_addr_t addr;
@@ -2338,11 +2343,15 @@ static void service_slot(void) {
             } else if (ds4_activation_step == 1) {
                 ds4_activation_step = 2;
                 if (hid_host_send_get_report(classic_hid_cid, HID_REPORT_TYPE_FEATURE, 0x05) == ERROR_CODE_SUCCESS) {
-                    ds4_activation_pending = false;
+                    ds4_activation_pending = true;
+                    ds4_activation_at=now+1000u;
                 } else ds4_activation_step = 1;
             }
-            ds4_activation_at = now + 100u;
-        } else ds4_activation_pending = false;
+            if(ds4_activation_step==2){
+                /* Waiting for a reply: preserve its timeout; on expiry retry. */
+                if((int32_t)(now-ds4_activation_at)>=0)ds4_activation_step=1;
+            } else ds4_activation_at=now+100u;
+        } else {ds4_activation_pending=false;ds4_activation_step=3;}
     }
     if (wiiu_setup_step && classic_hid_cid && current_identity.kind == BB_CONTROLLER_WII_U_PRO && (int32_t)(now - wiiu_setup_at) >= 0) {
         bool sent = false;

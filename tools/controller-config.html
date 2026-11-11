@@ -36,7 +36,23 @@
     <label for="gyro-pause">Hold to pause gyro and reposition</label>
     <select id="gyro-pause"></select>
     <label><input id="gyro-fire" type="checkbox">Use right trigger for mouse left-click / fire</label>
-    <p><small>Requires mouse output enabled above and single-controller MiSTer mode. Right-pad movement still works for fine adjustment. The pause button is reserved for aiming; trigger-to-fire replaces the gamepad right trigger. These global settings apply after restart. Relative aiming cannot automatically centre the crosshair. Mouse support depends on the MiSTer core. Steam Controller only; DS4 gyro is not included.</small></p>
+    <p><small>Requires mouse output enabled above and single-controller MiSTer mode. Right-pad movement still works for fine adjustment. The pause button is reserved for aiming; trigger-to-fire replaces the gamepad right trigger. These global settings apply after restart. Relative aiming cannot automatically centre the crosshair. Mouse support depends on the MiSTer core. These controls apply to the Steam Controller; DS4 has separate controls below.</small></p>
+  </fieldset>
+  <fieldset id="ds4-gyro-settings" hidden disabled>
+    <legend>DualShock 4 gyro aiming (experimental)</legend>
+    <label><input id="ds4-gyro-enabled" type="checkbox">Enable gyro-to-mouse aiming</label>
+    <label for="ds4-gyro-sensitivity">Gyro sensitivity (%)</label>
+    <input id="ds4-gyro-sensitivity" type="number" min="1" max="200" step="1" value="100">
+    <label for="ds4-gyro-activation">Move the pointer</label>
+    <select id="ds4-gyro-activation"><option value="0">Whenever gyro aiming is enabled</option><option value="1">While touching the touchpad</option><option value="2">While holding L2</option></select>
+    <label><input id="ds4-gyro-invert-x" type="checkbox">Invert horizontal aiming</label>
+    <label><input id="ds4-gyro-invert-y" type="checkbox">Invert vertical aiming</label>
+    <label for="ds4-gyro-pause">Hold to pause gyro and reposition</label>
+    <select id="ds4-gyro-pause"></select>
+    <label><input id="ds4-gyro-fire" type="checkbox">Use R2 for mouse left-click / fire</label>
+    <p><small>Requires master mouse output above and single-controller MiSTer mode. Factory calibration must be received and validated before gyro aiming becomes active. R3 is the default pause button. Touchpad movement remains available for fine adjustment. Pause is reserved for aiming; optional R2 fire replaces gamepad R2. Relative aiming cannot automatically centre the crosshair. Accelerometer readings are diagnostic only; tilt mapping is not included.</small></p>
+    <button id="ds4-motion-read" type="button">Read sensor diagnostics</button>
+    <p id="ds4-motion-status">Connect the DS4, then read its calibration and sensors.</p>
   </fieldset>
   <p id="pointer-status">Connect an adapter to read its settings.</p>
   <button id="save-pointer">Save mouse setting and restart</button>
@@ -45,7 +61,7 @@
 <script type="module">
 const $ = id => document.getElementById(id);
 let port, reader, writer, reading, nextId = 0, pending = new Map(), busy = false;
-let hasSteam=false,hasGyro=false;
+let hasSteam=false,hasGyro=false,hasDs4Gyro=false;
 let hasTouchMouse=false,pointerLoaded=false;
 let expectedRestart=false;
 const encoder = new TextEncoder();
@@ -125,6 +141,16 @@ async function loadPointer() {
     $('gyro-pause').value=String(aim.pause_button);
     $('gyro-settings').disabled=false;
   }
+  $('ds4-gyro-settings').hidden=!hasDs4Gyro;$('ds4-gyro-settings').disabled=true;
+  if(hasDs4Gyro){
+    const aim=await command('DS4_AIM_GET');
+    $('ds4-gyro-enabled').checked=Boolean(aim.enabled);$('ds4-gyro-sensitivity').value=String(aim.sensitivity);
+    $('ds4-gyro-activation').value=String(aim.activation);
+    $('ds4-gyro-invert-x').checked=Boolean(aim.flags&1);$('ds4-gyro-invert-y').checked=Boolean(aim.flags&2);$('ds4-gyro-fire').checked=Boolean(aim.flags&4);
+    const labels=['Cross','Circle','Square','Triangle','L1','R1','L2','R2','Share','Options','L3','R3','PS','Touchpad press'];
+    options($('ds4-gyro-pause'),[[255,'None'],...labels.map((label,index)=>[index,label])]);
+    $('ds4-gyro-pause').value=String(aim.pause_button);$('ds4-gyro-settings').disabled=false;
+  }
   const data=await command('TOUCH_MOUSE_GET');
   $('touch-mouse').checked=Boolean(data.enabled);pointerLoaded=true;
   $('pointer-status').textContent=data.available
@@ -164,24 +190,35 @@ $('connect').onclick = async () => {
     if (!hello.capabilities?.touch_mouse) throw new Error('This firmware does not support controller mouse settings.');
     hasSteam=Boolean(hello.capabilities?.steam_ble);
     hasGyro=Boolean(hello.capabilities?.steam_gyro);
+    hasDs4Gyro=Boolean(hello.capabilities?.ds4_gyro);
     hasTouchMouse=Boolean(hello.capabilities?.touch_mouse);
     $('refresh').disabled = false;
     await run(refresh);
   } catch (error) { status(error.message); $('connect').disabled = false; }
 };
 $('refresh').onclick = () => run(refresh);
+function aimFields(prefix){
+  const sensitivity=Number($(prefix+'sensitivity').value);
+  if(!Number.isInteger(sensitivity)||sensitivity<1||sensitivity>200)throw new Error('Choose a whole-number gyro sensitivity from 1 to 200%.');
+  const flags=($(prefix+'invert-x').checked?1:0)|($(prefix+'invert-y').checked?2:0)|($(prefix+'fire').checked?4:0);
+  return [$(prefix+'enabled').checked?'1':'0',sensitivity,$(prefix+'activation').value,flags,$(prefix+'pause').value];
+}
 $('save-pointer').onclick=()=>run(async()=>{
   let result;
-  if(hasGyro) {
-    const sensitivity=Number($('gyro-sensitivity').value);
-    if(!Number.isInteger(sensitivity)||sensitivity<1||sensitivity>200)throw new Error('Choose a whole-number gyro sensitivity from 1 to 200%.');
-    const flags=($('gyro-invert-x').checked?1:0)|($('gyro-invert-y').checked?2:0)|($('gyro-fire').checked?4:0);
-    result=await command('STEAM_AIM_SET',$('gyro-enabled').checked?'1':'0',sensitivity,$('gyro-activation').value,flags,$('gyro-pause').value,$('touch-mouse').checked?'1':'0');
-  }
+  if(hasDs4Gyro){
+    const steam=aimFields('gyro-'),ds4=aimFields('ds4-gyro-');
+    result=await command('POINTER_SETTINGS_SET',$('touch-mouse').checked?'1':'0',...steam,...ds4);
+  } else if(hasGyro) result=await command('STEAM_AIM_SET',...aimFields('gyro-'),$('touch-mouse').checked?'1':'0');
   else result=await command('TOUCH_MOUSE_SET',$('touch-mouse').checked?'1':'0');
   expectedRestart=Boolean(result.restart_required);
-  status(expectedRestart?'Mouse setting saved. Reconnect after the adapter restarts.':'Mouse setting saved.');
+  status(expectedRestart?'Mouse settings saved. Reconnect after the adapter restarts.':'Mouse settings saved.');
   if(!expectedRestart)await loadPointer();
+});
+$('ds4-motion-read').onclick=()=>run(async()=>{
+  const m=await command('DS4_MOTION_GET');
+  $('ds4-motion-status').textContent='Slot '+m.slot+': calibration '+(['not received','valid','rejected'][m.calibration]??'unknown')+
+    '; samples '+m.samples+'; last sample '+m.age_ms+' ms ago. Raw gyro: '+m.raw_gyro.join(', ')+
+    '; raw accelerometer: '+m.raw_accel.join(', ')+'. Calibrated acceleration (mg): '+m.accel_mg.join(', ')+'.';
 });
 </script>
 </html>

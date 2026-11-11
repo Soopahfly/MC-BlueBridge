@@ -31,7 +31,7 @@ Pause affects gyro movement only. All choices are global and apply after restart
 master mouse off disables pointer output while preserving the saved gyro choices.
 
 This is relative air-mouse aiming, not absolute screen pointing or automatic
-recentering. No DS4 gyro or accelerometer tilt mode. Hardware drift, axes, radio
+recentering. No accelerometer tilt mode. Hardware drift, axes, radio
 behavior, core compatibility and sensitivity still need validation. Mouse is
 absent in other output modes and two-controller mode.
 
@@ -64,3 +64,61 @@ The transport, parser and pointer integration are original implementation code.
 Software checks: `python tests/run.py`, `node tests/test_controller_config.mjs`,
 and after an ARM build `python tools/check_usb_descriptors.py build`.
 Hardware checklist and contribution boundaries: CONTROLLER_TEST_PLAN.md.
+
+
+## DS4 motion support (controller preview.2)
+
+Implemented and software-tested; hardware validation is pending. This addition
+is on the controller-only branch, not the personal display fork's older releases.
+In the config app, enable master mouse output, then the separate **DualShock 4
+gyro aiming** option. Set sensitivity (1-200%), X/Y inversion, activation (always,
+touchpad contact or L2), hold-to-pause (default R3), and optional R2 left-click/fire.
+DS4 and Steam choices are independent; one save stores both and master mouse
+atomically. Changes apply after restart. R2 fire and the chosen pause button are
+reserved from gamepad input only while eligible calibrated DS4 aiming is enabled.
+Touchpad pointer movement and touchpad-press left-click remain available.
+
+The existing Bluetooth 0x05 setup request now loads factory calibration rather
+than discarding it. Length, feature CRC, gyro/accel ranges and scale denominators
+are checked before accepting it. Rejected/unavailable calibration leaves gyro
+output inactive, while normal gamepad/touchpad input stays available. Setup has
+bounded retries and response timeouts; no new continuous polling is introduced.
+Full 0x11 input reports require correct length, CRC and touch-record count before
+being used. Short 0x01 gamepad reports carry no sensor data and do not drive gyro.
+
+Sensor timestamps use 16/3 microsecond ticks, with duplicate suppression, wrap
+handling, fractional movement retention, a small deadband and no catch-up after
+sensor/radio gaps or pause/capture. Factory bias/scale handling follows the
+Bluetooth report definitions described by SDL; axis directions, rest drift,
+clone compatibility and usable sensitivity still need physical testing.
+
+The **Read sensor diagnostics** button reports the selected slot's calibration
+state, sample count/age, raw three-axis gyro/accelerometer readings, calibrated
+gyro (1/1024 degree/s via serial) and acceleration (mg). Accelerometer data is
+read and calibrated for diagnostics only: tilt-to-stick/mouse mapping is not
+implemented. The USB host receives a gamepad plus relative mouse, not a native
+six-axis sensor interface. No absolute light-gun coordinates or auto-recentering.
+
+Additional protocol:
+
+```
+BB1|1|DS4_AIM_GET
+BB1|2|DS4_MOTION_GET
+BB1|3|POINTER_SETTINGS_SET|1|0|100|0|0|16|1|100|0|0|11
+```
+
+Atomic SET: master mouse (0/1), five Steam fields, five DS4 fields. Each group is
+enabled, sensitivity, activation, flags and canonical pause button. DS4 uses
+buttons 0-13 or 255=None. STEAM_AIM_SET and TOUCH_MOUSE_SET remain compatible
+and preserve DS4 choices. HELLO adds ds4_gyro; older firmware hides DS4 controls.
+
+Controller-only schema 15 appends five DS4 settings bytes to its schema 14,
+for a 10,991-byte payload. Previous controller-only schema-14 settings retain
+mouse/Steam options and default DS4 gyro off. Original upstream flash schemas
+7-13 and exports 8-13 still migrate. Personal display-fork schemas are unrelated
+and incompatible: back up their own settings before flashing this test firmware.
+
+Primary references: [SDL DS4 sensor/calibration handling](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_ps4.c)
+and [Sony's Linux driver report/timestamp definitions](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c).
+These protocol facts inform original implementation code; no external driver
+implementation has been copied into this contribution.

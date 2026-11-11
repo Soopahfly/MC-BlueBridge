@@ -17,6 +17,7 @@ out.mkdir(exist_ok=True)
 for name, sources in {
     "steam-ble": ["tests/test_steam_ble.c", "src/steam_ble.c"],
     "steam-controller": ["tests/test_steam_controller.c", "src/steam_controller.c"],
+    "ds4-motion": ["tests/test_ds4_motion.c", "src/ds4_motion.c", "src/touch_mouse.c"],
     "touch-mouse": ["tests/test_touch_mouse.c", "src/touch_mouse.c"],
     "controller-settings": ["tests/test_controller_settings.c", "src/bluebridge_state.c", "src/config_store.c", "src/controller_input.c"],
 }.items():

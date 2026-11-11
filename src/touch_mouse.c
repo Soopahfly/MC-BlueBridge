@@ -5,13 +5,17 @@ static uint32_t crc_byte(uint32_t crc,uint8_t byte) {
     for(unsigned i=0;i<8;i++)crc=(crc>>1)^((crc&1u)?0xedb88320u:0);
     return crc;
 }
+bool bb_hid_crc_valid(const uint8_t* p,uint16_t length,uint8_t seed){
+    if(!p||length<4)return false;
+    uint32_t crc=crc_byte(0xffffffffu,seed);
+    for(unsigned i=0;i<(unsigned)length-4u;i++)crc=crc_byte(crc,p[i]);
+    const uint8_t* tail=p+length-4u;
+    uint32_t received=(uint32_t)tail[0]|((uint32_t)tail[1]<<8)|((uint32_t)tail[2]<<16)|((uint32_t)tail[3]<<24);
+    return (~crc)==received;
+}
 bool bb_ds4_pointer_decode(bb_ds4_pointer_t* s,const uint8_t* p,uint16_t len,
                            uint32_t now,bb_pointer_sample_t* out) {
-    if(!p||len!=78||p[0]!=0x11||p[35]>4)return false;
-    uint32_t crc=crc_byte(0xffffffffu,0xa1);
-    for(unsigned i=0;i<74;i++)crc=crc_byte(crc,p[i]);
-    uint32_t received=(uint32_t)p[74]|((uint32_t)p[75]<<8)|((uint32_t)p[76]<<16)|((uint32_t)p[77]<<24);
-    if((~crc)!=received)return false;
+    if(!p||len!=78||p[0]!=0x11||p[35]>4||!bb_hid_crc_valid(p,len,0xa1))return false;
     *out=(bb_pointer_sample_t){.buttons=(p[9]&2u)?1:0};
     if((uint32_t)(now-s->at)>500u)memset(s,0,sizeof(*s));
     s->at=now;

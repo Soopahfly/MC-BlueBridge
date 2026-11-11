@@ -263,6 +263,33 @@ static void handle_command(char* text) {
     char* cmd = next_field(&cursor);
     if (!proto || strcmp(proto, "BB1") || !id || !cmd) return;
 
+    if(!strcmp(cmd,"DS4_AIM_GET")){
+        bb_ds4_aim_t a=bb_ds4_aim_get();char out[160];
+        snprintf(out,sizeof(out),"{\"enabled\":%u,\"sensitivity\":%u,\"activation\":%u,\"flags\":%u,\"pause_button\":%u}",a.enabled,a.sensitivity,a.activation,a.flags,a.pause_button);
+        send_ok(id,out);return;
+    }
+    if(!strcmp(cmd,"POINTER_SETTINGS_SET")){
+        uint8_t values[11];
+        for(unsigned i=0;i<11;i++){
+            char* field=next_field(&cursor);char* end;
+            if(!field||!*field){send_err(id,"pointer_settings");return;}
+            for(char* p=field;*p;p++)if(*p<'0'||*p>'9'){send_err(id,"pointer_settings");return;}
+            unsigned long n=strtoul(field,&end,10);if(*end||n>255){send_err(id,"pointer_settings");return;}values[i]=(uint8_t)n;
+        }
+        bb_steam_aim_t steam={values[1],values[2],values[3],values[4],values[5]};
+        bb_ds4_aim_t ds4={values[6],values[7],values[8],values[9],values[10]};
+        if(cursor||values[0]>1||!bb_controller_pointer_set(values[0]!=0,steam,ds4)){send_err(id,"pointer_settings");return;}
+        bb_steam_aim_t active_steam=bb_steam_aim_current();bb_ds4_aim_t active_ds4=bb_ds4_aim_current();char out[64];
+        snprintf(out,sizeof(out),"{\"restart_required\":%s}",(bb_touch_mouse_get()!=bb_touch_mouse_current()||memcmp(&steam,&active_steam,sizeof(steam))||memcmp(&ds4,&active_ds4,sizeof(ds4)))?"true":"false");send_ok(id,out);return;
+    }
+    if(!strcmp(cmd,"DS4_MOTION_GET")){
+        bb_ds4_motion_t m={0};bb_driver_ds4_motion_snapshot(&m);char out[384];
+        snprintf(out,sizeof(out),"{\"slot\":%u,\"calibration\":%u,\"samples\":%lu,\"age_ms\":%lu,\"raw_gyro\":[%d,%d,%d],\"raw_accel\":[%d,%d,%d],\"gyro_q10\":[%ld,%ld,%ld],\"accel_mg\":[%ld,%ld,%ld]}",
+            bb_slot_current(),m.calibration,(unsigned long)m.samples,(unsigned long)(to_ms_since_boot(get_absolute_time())-m.at),
+            m.raw_gyro[0],m.raw_gyro[1],m.raw_gyro[2],m.raw_accel[0],m.raw_accel[1],m.raw_accel[2],
+            (long)m.gyro_q10[0],(long)m.gyro_q10[1],(long)m.gyro_q10[2],(long)m.accel_mg[0],(long)m.accel_mg[1],(long)m.accel_mg[2]);
+        send_ok(id,out);return;
+    }
     if(!strcmp(cmd,"STEAM_AIM_GET")) {
         bb_steam_aim_t a=bb_steam_aim_get(),active=bb_steam_aim_current();
         char out[256];snprintf(out,sizeof(out),"{\"enabled\":%u,\"sensitivity\":%u,\"activation\":%u,\"flags\":%u,\"pause_button\":%u,\"restart_required\":%s}",
@@ -304,7 +331,7 @@ static void handle_command(char* text) {
         bb_adapter_name_get(adapter_name, sizeof(adapter_name));
         bb_adapter_custom_name_get(custom_name, sizeof(custom_name));
         pico_get_unique_board_id_string(adapter_id, sizeof(adapter_id));
-        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"touch_mouse\":true,\"steam_ble\":true,\"steam_gyro\":true},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
+        snprintf(out, sizeof(out), "{\"protocol\":%d,\"firmware\":\"%s\",\"hardware\":\"Pico 2 W\",\"config_schema\":%d,\"capabilities\":{\"controller_rename\":true,\"remapped_tester\":true,\"adapter_rename\":true,\"multi_controller_mode\":true,\"multi_controller_diagnostics\":true,\"device_blacklist\":true,\"bluetooth_device_id\":true,\"touch_mouse\":true,\"steam_ble\":true,\"steam_gyro\":true,\"ds4_gyro\":true},\"firmware_id\":\"%s\",\"adapter_id\":\"%s\",\"adapter_name\":\"%s\",\"adapter_custom_name\":\"%s\"}", BLUEBRIDGE_PROTOCOL_VERSION, BLUEBRIDGE_VERSION, BB_CONFIG_SCHEMA, BLUEBRIDGE_FIRMWARE_MANIFEST, adapter_id, adapter_name, custom_name);
         send_ok(id, out);
         return;
     }
@@ -621,7 +648,7 @@ static void handle_command(char* text) {
         char* size = next_field(&cursor);
         char* checksum = next_field(&cursor);
         int schema_value = schema ? atoi(schema) : 0;
-        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13))) {
+        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 14 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V14_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13 && schema_value != 14))) {
             import_active = false;
             send_err(id, "config_header");
             return;

@@ -58,6 +58,7 @@ add_executable(mc_bluebridge
   src/xsm3_excrypt_sha.c
   src/steam_ble.c
   src/steam_controller.c
+  src/ds4_motion.c
   src/touch_mouse.c
   src/usb_device.c
   src/usb_descriptors.c

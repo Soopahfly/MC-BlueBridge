@@ -1,7 +1,7 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
-/* Global, boot-applied settings for the original Steam Controller only. */
+/* Boot-applied aiming option layout; DS4 stores an independent copy. */
 typedef struct __attribute__((packed)) {
     uint8_t enabled, sensitivity, activation, flags, pause_button;
 } bb_steam_aim_t;

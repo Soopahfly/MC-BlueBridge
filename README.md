@@ -334,11 +334,11 @@ Controller support depends on the hardware, controller firmware and Bluetooth mo
 
 - **Touchpad mouse:** optional DS4 touchpad and original Steam Controller right-pad movement, left-click and drag are implemented. Mouse output requires single-controller MiSTer mode and must be enabled in the config app.
 - **Original Steam Controller:** dedicated BLE transport and gamepad decoding are implemented, including left-pad directions, grip inputs and right-pad mouse/right-stick behavior. Valve's BLE-capable controller firmware is required; its proprietary USB receiver is not used.
-- **Motion aiming:** optional original Steam Controller gyro-to-mouse aiming is implemented, with sensitivity, axis inversion, activation choices, hold-to-pause and right-trigger mouse fire available in the config app. It defaults off.
+- **Motion aiming:** optional DS4 and original Steam Controller gyro-to-mouse aiming is implemented, with sensitivity, axis inversion, activation choices, hold-to-pause and right-trigger mouse fire available in the config app. Both default off.
 
 ### Remaining limitations
 
-- **Motion sensors:** DS4 gyro and general accelerometer/tilt mapping are not implemented. Steam gyro aiming sends relative mouse movement; it does not provide absolute light-gun positioning or automatic crosshair recentering. User gyro calibration is not included.
+- **Motion sensors:** DS4 gyro and calibrated accelerometer diagnostics are implemented, awaiting hardware testing. General accelerometer/tilt mapping is not implemented. Gyro aiming sends relative mouse movement; it does not provide absolute light-gun positioning or automatic crosshair recentering. DS4 gyro requires valid factory calibration; user stationary calibration is not included.
 - **Touchpad gestures:** no scroll, right-click gesture, tap-to-click, inertia or haptic feedback. Touchpad sensitivity is fixed; the configurable sensitivity applies to Steam gyro aiming.
 - **Other Steam devices:** the new BLE path targets the original 2015 controller (model 1001), not newer Steam controllers or Steam Deck.
 - **Adaptive triggers and controller-specific lighting:** not implemented by these additions.
@@ -381,6 +381,6 @@ The GPL-3.0 license applies to MC BlueBridge's own project code and does not rep
 ## Experimental controller support
 
 This local contribution adds optional DS4 touchpad mouse and original Steam
-Controller BLE/gamepad/touchpad/gyro support. See [controller setup](docs/CONTROLLERS.md)
+Controller BLE/gamepad/touchpad/gyro support, plus DS4 gyro aiming and sensor diagnostics. See [controller setup](docs/CONTROLLERS.md)
 and the [hardware test checklist](docs/CONTROLLER_TEST_PLAN.md). Hardware testing
 and owner approval are required before publication.

@@ -8,7 +8,7 @@ Branch: contrib/ds4-steam-controllers.
 
 ## Included
 
-- DS4 Bluetooth touchpad to relative USB mouse and pad-press left-click/drag.
+- DS4 Bluetooth touchpad mouse plus optional calibrated gyro aiming and gyro/accelerometer diagnostics.
 - Original 2015 Steam Controller BLE transport, bounded report assembly,
   gamepad inputs, left-pad D-pad, remappable grips and right-pad mouse/stick.
 - Optional Steam gyro-to-mouse aiming with sensitivity, inversion, activation,
@@ -57,22 +57,45 @@ Existing upstream output modes, normal gamepad queue and input scheduling remain
 
 ## Firmware/settings separation
 
-This standalone branch uses upstream schema 13 plus a six-byte controller-only
-schema-14 extension (10,986-byte payload). Its schema 14 is independent of the
+This standalone branch uses upstream schema 13 plus controller-only mouse/Steam
+settings (schema 14), then independent DS4 aiming settings in schema 15
+(10,991-byte payload). Its schemas 14/15 are independent of the
 personal OLED fork's schema 14-18 and has a different validated payload length.
 It cannot import the personal fork's exports or automatically retain those flash
 records. Keep that firmware and its export before testing; restoring the personal
 fork requires reflashing it and restoring its own settings export. Never assume
 matching schema numbers imply matching layouts. Upstream schema 7-13 flash records
-migrate; schema 8-13 exports remain accepted. New mouse and gyro options default off.
+migrate; schema 8-14 exports remain accepted. Controller-only schema 14 preserves
+its mouse/Steam choices and defaults DS4 gyro off. New mouse and gyro options default off.
 
 ## Known limitations
 
 Hardware support is experimental. Relative gyro aiming does not know the screen
 position and cannot automatically centre a crosshair. No accelerometer tilt,
-DS4 gyro, gyro calibration, scroll/right-click gestures or haptics are included.
+user stationary calibration, scroll/right-click gestures or haptics are included.
+DS4 factory calibration and gyro/accelerometer diagnostics are implemented.
 Core mouse support, firmware compatibility, drift, axes and sensitivity need real
 validation. General Bluetooth keyboards/mice and the Valve USB receiver are out
 of scope. Unrelated existing upstream stack/queue behavior is retained rather
 than claimed fixed by this contribution. Existing hid_feedback.c excess-initializer
 compiler warnings are outside this controller contribution.
+
+
+## DS4 motion follow-up
+
+- [x] Decode signed three-axis gyro/accelerometer and sensor timestamps from validated full reports.
+- [x] Validate/consume Bluetooth factory calibration, with bounded setup retry/response handling.
+- [x] Independent default-off DS4 aiming settings, atomic master/Steam/DS4 save and schema-14 migration.
+- [x] Gyro mouse, sensitivity/inversion, touch/L2 activation, pause/reposition and optional R2 fire.
+- [x] Config app controls, calibration/sensor diagnostics and old-firmware capability fallback.
+- [x] Native tests for calibration CRC/ranges, units, settings, stale/duplicate/wrapped timestamps and isolation.
+- [x] Actual config-page simulated serial tests, including independent DS4 and Steam options.
+- [x] Build final preview.2 UF2, audit USB descriptors and verify controller-only scope.
+- [ ] Back up the tested source changes to the owner's GitHub branch; keep upstream PR unopened.
+- [ ] Hardware: Sony DS4 v1/v2 factory calibration, full reports and sensor readout while moving/still.
+- [ ] Hardware: gyro directions, sensitivity, stationary drift, touch/L2 activation, pause/R2 fire and releases.
+- [ ] Hardware: invalid/missing calibration keeps motion inactive; buttons/touchpad/reconnect remain usable.
+- [ ] Hardware: verify old settings migration and mouse-capable MiSTer core behavior.
+
+Accelerometer tilt mapping remains a separate follow-up; sensor diagnostics do
+not imply native six-axis output or tested motion-control compatibility.

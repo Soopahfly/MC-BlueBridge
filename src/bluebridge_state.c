@@ -11,6 +11,7 @@ static uint8_t io_slot;
 static bool boot_multi;
 static bool boot_touch_mouse;
 static bb_steam_aim_t boot_steam_aim;
+static bb_ds4_aim_t boot_ds4_aim;
 static volatile bool mode_restart;
 #define runtime_state runtime_slots[bb_slot_current()]
 static bb_config_t config_state;
@@ -27,12 +28,16 @@ bb_steam_aim_t bb_steam_aim_get(void){
     critical_section_enter_blocking(&lock);bb_steam_aim_t a=config_state.steam_aim;
     critical_section_exit(&lock);return a;
 }
-bool bb_pointer_settings_set(bb_steam_aim_t a,bool mouse){
-    if(!bb_steam_aim_valid(a))return false;
+bb_ds4_aim_t bb_ds4_aim_current(void){return boot_ds4_aim;}
+bb_ds4_aim_t bb_ds4_aim_get(void){critical_section_enter_blocking(&lock);bb_ds4_aim_t a=config_state.ds4_aim;critical_section_exit(&lock);return a;}
+bool bb_pointer_settings_set(bb_steam_aim_t a,bool mouse){return bb_controller_pointer_set(mouse,a,bb_ds4_aim_get());}
+bool bb_controller_pointer_set(bool mouse,bb_steam_aim_t a,bb_ds4_aim_t ds4){
+    if(!bb_steam_aim_valid(a)||!bb_ds4_aim_valid(ds4))return false;
     critical_section_enter_blocking(&lock);
     if(memcmp(&a,&config_state.steam_aim,sizeof(a))){config_state.steam_aim=a;config_save_pending=true;}
     if(config_state.touch_mouse_enabled!=mouse){config_state.touch_mouse_enabled=mouse;config_save_pending=true;}
-    if(mouse!=boot_touch_mouse || memcmp(&a,&boot_steam_aim,sizeof(a)))mode_restart=true;
+    if(memcmp(&ds4,&config_state.ds4_aim,sizeof(ds4))){config_state.ds4_aim=ds4;config_save_pending=true;}
+    if(mouse!=boot_touch_mouse || memcmp(&a,&boot_steam_aim,sizeof(a))||memcmp(&ds4,&boot_ds4_aim,sizeof(ds4)))mode_restart=true;
     critical_section_exit(&lock);return true;
 }
 bool bb_touch_mouse_current(void){return boot_touch_mouse;}
@@ -143,6 +148,7 @@ static void init_defaults(bb_config_t* cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->schema = BB_CONFIG_SCHEMA;
     cfg->steam_aim=bb_steam_aim_defaults();
+    cfg->ds4_aim=bb_ds4_aim_defaults();
     cfg->output_mode = BB_OUTPUT_MISTER;
     cfg->next_controller_id = 1;
     cfg->next_profile_id = 1;
@@ -169,9 +175,9 @@ void bb_state_init(void) {
     }
     if (!bb_config_load(&config_state)) {
         init_defaults(&config_state);
-    } else if (config_state.schema == 8 || config_state.schema == 9 || config_state.schema == 10 || config_state.schema == 11 || config_state.schema == 12 || config_state.schema == 13) {
-        config_state.touch_mouse_enabled=0;
-        config_state.steam_aim=bb_steam_aim_defaults();
+    } else if (config_state.schema == 8 || config_state.schema == 9 || config_state.schema == 10 || config_state.schema == 11 || config_state.schema == 12 || config_state.schema == 13 || config_state.schema == 14) {
+        if(config_state.schema<14){config_state.touch_mouse_enabled=0;config_state.steam_aim=bb_steam_aim_defaults();}
+        config_state.ds4_aim=bb_ds4_aim_defaults();
         config_state.schema = BB_CONFIG_SCHEMA;
         if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_LAST) config_state.output_mode = BB_OUTPUT_MISTER;
         config_save_pending = true;
@@ -184,6 +190,8 @@ void bb_state_init(void) {
     if(config_state.touch_mouse_enabled>1){config_state.touch_mouse_enabled=0;config_save_pending=true;}
     if(!bb_steam_aim_valid(config_state.steam_aim)){config_state.steam_aim=bb_steam_aim_defaults();config_save_pending=true;}
     boot_touch_mouse=config_state.touch_mouse_enabled!=0;
+    if(!bb_ds4_aim_valid(config_state.ds4_aim)){config_state.ds4_aim=bb_ds4_aim_defaults();config_save_pending=true;}
+    boot_ds4_aim=config_state.ds4_aim;
     boot_steam_aim=config_state.steam_aim;
     boot_multi = config_state.multi_controller == 1;
     config_state.multi_controller = boot_multi;
@@ -1049,7 +1057,7 @@ const char* bb_output_mode_name(bb_output_mode_t mode) {
 }
 
 bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
-    if (!cfg || (cfg->schema != BB_CONFIG_SCHEMA && cfg->schema != 8 && cfg->schema != 9 && cfg->schema != 10 && cfg->schema != 11 && cfg->schema != 12 && cfg->schema != 13) || bb_config_checksum(cfg) != checksum) return false;
+    if (!cfg || (cfg->schema != BB_CONFIG_SCHEMA && cfg->schema != 8 && cfg->schema != 9 && cfg->schema != 10 && cfg->schema != 11 && cfg->schema != 12 && cfg->schema != 13 && cfg->schema != 14) || bb_config_checksum(cfg) != checksum) return false;
     if (cfg->controller_count > BB_MAX_CONTROLLERS) return false;
     if (cfg->controller_count && cfg->active_controller >= cfg->controller_count) return false;
     for (uint8_t i = 0; i < cfg->controller_count; ++i) {
@@ -1059,6 +1067,8 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     static bb_config_t value;
     value = *cfg;
     value.schema = BB_CONFIG_SCHEMA;
+    if(cfg->schema<15)value.ds4_aim=bb_ds4_aim_defaults();
+    if(!bb_ds4_aim_valid(value.ds4_aim))return false;
     if(cfg->schema<14){value.touch_mouse_enabled=0;value.steam_aim=bb_steam_aim_defaults();}
     if(value.touch_mouse_enabled>1||!bb_steam_aim_valid(value.steam_aim))return false;
     if (cfg->schema < 11) memset(value.adapter_name, 0, sizeof(value.adapter_name));
@@ -1078,6 +1088,7 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     if (value.multi_controller) value.output_mode = BB_OUTPUT_MISTER;
     if (value.multi_controller != boot_multi) mode_restart = true;
     if((value.touch_mouse_enabled!=0)!=boot_touch_mouse||memcmp(&value.steam_aim,&boot_steam_aim,sizeof(boot_steam_aim)))mode_restart=true;
+    if(memcmp(&value.ds4_aim,&boot_ds4_aim,sizeof(boot_ds4_aim)))mode_restart=true;
     bb_config_set(&value, true);
     return true;
 }
@@ -1087,6 +1098,7 @@ bool bb_config_reset(void) {
     init_defaults(&fresh);
     if (boot_multi) mode_restart = true;
     if(boot_touch_mouse||memcmp(&fresh.steam_aim,&boot_steam_aim,sizeof(boot_steam_aim)))mode_restart=true;
+    if(memcmp(&fresh.ds4_aim,&boot_ds4_aim,sizeof(boot_ds4_aim)))mode_restart=true;
     bb_config_set(&fresh, true);
     return true;
 }
