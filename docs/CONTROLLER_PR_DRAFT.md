@@ -1,8 +1,8 @@
 # Proposed PR: Add DS4 touchpad mouse and original Steam Controller BLE support
 
 Local PR description draft; no GitHub pull request has been opened.
-Target: Anime0t4ku/MC-BlueBridge main. Hardware testing and owner approval required
-before pushing contrib/ds4-steam-controllers or submitting this description.
+Target: Anime0t4ku/MC-BlueBridge main. The owner authorized branch backup to their
+own fork; hardware testing is still required before submitting this description.
 
 ## Problem and behavior
 

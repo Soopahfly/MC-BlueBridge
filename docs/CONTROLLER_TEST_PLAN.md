@@ -1,7 +1,8 @@
 # DS4 and original Steam Controller contribution
 
-Local preparation only. Do not push this branch, create a GitHub PR, or publish
-firmware until the owner completes hardware tests and authorizes publication.
+The owner authorized backing up this branch to Soopahfly/MC-BlueBridge.
+Do not create an upstream GitHub PR or publish firmware until hardware testing
+is complete and the owner is ready to submit.
 Base: upstream 1.1.0, e3896aaf4a00e4e1063d4ccfceba08d8c231a8cb.
 Branch: contrib/ds4-steam-controllers.
 
@@ -51,7 +52,8 @@ Existing upstream output modes, normal gamepad queue and input scheduling remain
 - [ ] MiSTer: verify pointer/click in an actual mouse-capable core and assess gyro aiming.
 - [ ] Other output modes and two-controller mode: ordinary gamepads, no extra mouse interface.
 - [ ] Measure latency separately; no hardware timing result is claimed by software tests.
-- [ ] Owner approves pushing the branch and submitting the upstream PR.
+- [x] Owner authorizes pushing the branch to their own fork for backup.
+- [ ] Hardware tests complete and owner is ready to submit the upstream PR.
 
 ## Firmware/settings separation
 
