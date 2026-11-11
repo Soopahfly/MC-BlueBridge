@@ -368,3 +368,10 @@ MC BlueBridge also uses third-party components including:
 These components remain subject to their own upstream license terms. See `THIRD_PARTY_LICENSES.md` for the Xbox 360 authentication dependency information.
 
 The GPL-3.0 license applies to MC BlueBridge's own project code and does not replace or override the licenses of third-party components.
+
+## Experimental controller support
+
+This local contribution adds optional DS4 touchpad mouse and original Steam
+Controller BLE/gamepad/touchpad/gyro support. See [controller setup](docs/CONTROLLERS.md)
+and the [hardware test checklist](docs/CONTROLLER_TEST_PLAN.md). Hardware testing
+and owner approval are required before publication.

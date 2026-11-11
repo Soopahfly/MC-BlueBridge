@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BlueBridge controller configuration</title>
+<style>
+  :root { color-scheme:dark; font:16px/1.5 system-ui,sans-serif; background:#111820; color:#e6eef5 }
+  body { max-width:660px; margin:60px auto; padding:0 24px }
+  h1 { font-size:1.8rem } p { color:#b6c6d4 }
+  fieldset { border:1px solid #435667; border-radius:12px; padding:24px; margin:24px 0 }
+  label { display:block; margin:16px 0 6px }
+  select,button { font:inherit; padding:10px 14px; border-radius:6px; border:1px solid #73899a }
+  select { width:100%; background:#1c2a35; color:inherit }
+  input[type=number] { font:inherit; padding:10px 14px; border-radius:6px; border:1px solid #73899a; background:#1c2a35; color:inherit; width:7em }
+  button { cursor:pointer; background:#92d4ff; color:#102330; margin-right:8px }
+  button:disabled { opacity:.5; cursor:default }
+  input[type=checkbox] { width:20px; height:20px; vertical-align:middle; margin-right:8px }
+  #status { min-height:3em; white-space:pre-wrap } small { color:#b6c6d4 }
+</style>
+<h1>BlueBridge controllers</h1>
+<p>Configure optional DS4 touchpad mouse and original Steam Controller mouse/gyro aiming.</p>
+<button id="connect">Connect adapter</button><button id="refresh" disabled>Refresh</button>
+<fieldset id="pointer-settings" disabled>
+  <legend>Mouse and aiming</legend>
+  <label><input id="touch-mouse" type="checkbox"><span id="pointer-label">Use supported touchpads as a USB mouse</span></label>
+  <p><small id="pointer-help">Connect an adapter to check supported touchpad features.</small></p>
+  <fieldset id="gyro-settings" hidden disabled>
+    <legend>Steam Controller gyro aiming (experimental)</legend>
+    <label><input id="gyro-enabled" type="checkbox">Enable gyro-to-mouse aiming</label>
+    <label for="gyro-sensitivity">Gyro sensitivity (%)</label>
+    <input id="gyro-sensitivity" type="number" min="1" max="200" step="1" value="100">
+    <label for="gyro-activation">Move the pointer</label>
+    <select id="gyro-activation"><option value="0">Whenever gyro aiming is enabled</option><option value="1">While touching the right pad</option><option value="2">While holding the left trigger</option></select>
+    <label><input id="gyro-invert-x" type="checkbox">Invert horizontal aiming</label>
+    <label><input id="gyro-invert-y" type="checkbox">Invert vertical aiming</label>
+    <label for="gyro-pause">Hold to pause gyro and reposition</label>
+    <select id="gyro-pause"></select>
+    <label><input id="gyro-fire" type="checkbox">Use right trigger for mouse left-click / fire</label>
+    <p><small>Requires mouse output enabled above and single-controller MiSTer mode. Right-pad movement still works for fine adjustment. The pause button is reserved for aiming; trigger-to-fire replaces the gamepad right trigger. These global settings apply after restart. Relative aiming cannot automatically centre the crosshair. Mouse support depends on the MiSTer core. Steam Controller only; DS4 gyro is not included.</small></p>
+  </fieldset>
+  <p id="pointer-status">Connect an adapter to read its settings.</p>
+  <button id="save-pointer">Save mouse setting and restart</button>
+</fieldset>
+<p id="status" role="status" aria-live="polite">Use Chrome or Edge on a computer with the adapter connected by USB. Close other apps using its serial port.</p>
+<script type="module">
+const $ = id => document.getElementById(id);
+let port, reader, writer, reading, nextId = 0, pending = new Map(), busy = false;
+let hasSteam=false,hasGyro=false;
+let hasTouchMouse=false,pointerLoaded=false;
+let expectedRestart=false;
+const encoder = new TextEncoder();
+function status(message) { $('status').textContent = message; }
+function failPending(message) {
+  for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error(message)); }
+  pending.clear();
+}
+async function receive() {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    while (true) {
+      const {value,done} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value,{stream:true});
+      if (buffer.length > 65536) throw new Error('Unexpected serial response.');
+      let end;
+      while ((end = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0,end).trim(); buffer = buffer.slice(end+1);
+        const match = /^BB1\|([^|]+)\|(OK|ERR)\|(.*)$/.exec(line);
+        if (!match) continue;
+        const p = pending.get(match[1]);
+        if (!p) continue;
+        pending.delete(match[1]); clearTimeout(p.timer);
+        if (match[2] === 'ERR') p.reject(new Error(match[3]));
+        else {
+          try { p.resolve(JSON.parse(match[3])); }
+          catch { p.resolve(match[3]); }
+        }
+      }
+    }
+  } catch (error) { status(expectedRestart?'Adapter restarted. Click Connect adapter to reconnect.':`Connection ended: ${error.message}`); }
+  finally {
+    reader.releaseLock();
+    failPending('Adapter disconnected.');
+    $('refresh').disabled = true;
+    $('pointer-settings').disabled=true;pointerLoaded=false;
+    $('connect').disabled = false;
+  }
+}
+async function command(name,...args) {
+  const id = String(++nextId);
+  let resolve, reject;
+  const result = new Promise((yes,no) => { resolve=yes; reject=no; });
+  const timer = setTimeout(() => {
+    pending.delete(id); reject(new Error('Adapter did not reply. Check the firmware and USB mode.'));
+  },4000);
+  pending.set(id,{resolve,reject,timer});
+  // Attach rejection handling before the asynchronous write can fail or time out.
+  const write = writer.write(encoder.encode(['BB1',id,name,...args].join('|')+'\n'));
+  try { return (await Promise.all([result,write]))[0]; }
+  finally { clearTimeout(timer); pending.delete(id); }
+}
+function options(select,items) {
+  select.replaceChildren(...items.map(([value,label]) => new Option(label,String(value))));
+}
+async function loadPointer() {
+  pointerLoaded=false;
+  if(!hasTouchMouse){$('pointer-status').textContent='Update firmware to configure the DS4 touchpad mouse.';return;}
+  $('pointer-label').textContent=hasSteam?'Use DS4 / original Steam Controller touchpads as a USB mouse':'Use DualShock 4 touchpad as a USB mouse';
+  $('pointer-help').textContent=hasSteam
+    ? 'Single-controller MiSTer mode. DS4: slide and press the touchpad. Original Steam Controller: slide and press the right pad. Steam support is experimental and needs BLE firmware. Other gamepad controls remain available.'
+    : 'Single-controller MiSTer mode. Slide and press the DS4 touchpad for pointer and left-click. This firmware does not include Steam touchpad support.';
+  $('gyro-settings').hidden=!hasGyro;$('gyro-settings').disabled=true;
+  if(hasGyro) {
+    const aim=await command('STEAM_AIM_GET');
+    $('gyro-enabled').checked=Boolean(aim.enabled);
+    $('gyro-sensitivity').value=String(aim.sensitivity);
+    $('gyro-activation').value=String(aim.activation);
+    $('gyro-invert-x').checked=Boolean(aim.flags&1);$('gyro-invert-y').checked=Boolean(aim.flags&2);
+    $('gyro-fire').checked=Boolean(aim.flags&4);
+    options($('gyro-pause'),[[255,'None'],[16,'Left back grip'],[17,'Right back grip'],[4,'Left bumper'],[5,'Right bumper'],[8,'Back']]);
+    // Preserve settings made by another client, even if the button is not a preset.
+    if(![255,16,17,4,5,8].includes(aim.pause_button))
+      options($('gyro-pause'),[[aim.pause_button,'Button '+aim.pause_button],[255,'None'],[16,'Left back grip'],[17,'Right back grip'],[4,'Left bumper'],[5,'Right bumper'],[8,'Back']]);
+    $('gyro-pause').value=String(aim.pause_button);
+    $('gyro-settings').disabled=false;
+  }
+  const data=await command('TOUCH_MOUSE_GET');
+  $('touch-mouse').checked=Boolean(data.enabled);pointerLoaded=true;
+  $('pointer-status').textContent=data.available
+    ? 'Saved: '+(data.enabled?'enabled':'disabled')+'. Active after restart: '+(data.active?'enabled':'disabled')+'.'
+    : 'Setting is saved, but mouse output requires single-controller MiSTer mode.';
+}
+async function refresh() {await loadPointer();status('Ready. Mouse and aiming settings apply after restart.');}
+async function run(action) {
+  if (busy) return;
+  busy = true;
+  $('refresh').disabled = true;
+  $('pointer-settings').disabled=true;
+  try { await action(); }
+  catch (error) { status(error.message); }
+  finally {
+    busy=false;
+    $('refresh').disabled = !port?.readable || expectedRestart;
+    $('pointer-settings').disabled = !pointerLoaded || !port?.readable || expectedRestart;
+  }
+}
+$('connect').onclick = async () => {
+  if (!('serial' in navigator)) { status('Web Serial is unavailable. Open this page in desktop Chrome or Edge at localhost.'); return; }
+  $('connect').disabled = true;
+  try {
+    if (port) {
+      if (reader) await reader.cancel().catch(()=>{});
+      if (reading) await reading;
+      if (writer) writer.releaseLock();
+      await port.close().catch(()=>{});
+    }
+    port = await navigator.serial.requestPort();
+    expectedRestart=false;
+    await port.open({baudRate:115200});
+    writer = port.writable.getWriter(); reader = port.readable.getReader();
+    reading = receive();
+    const hello = await command('HELLO');
+    if (!hello.capabilities?.touch_mouse) throw new Error('This firmware does not support controller mouse settings.');
+    hasSteam=Boolean(hello.capabilities?.steam_ble);
+    hasGyro=Boolean(hello.capabilities?.steam_gyro);
+    hasTouchMouse=Boolean(hello.capabilities?.touch_mouse);
+    $('refresh').disabled = false;
+    await run(refresh);
+  } catch (error) { status(error.message); $('connect').disabled = false; }
+};
+$('refresh').onclick = () => run(refresh);
+$('save-pointer').onclick=()=>run(async()=>{
+  let result;
+  if(hasGyro) {
+    const sensitivity=Number($('gyro-sensitivity').value);
+    if(!Number.isInteger(sensitivity)||sensitivity<1||sensitivity>200)throw new Error('Choose a whole-number gyro sensitivity from 1 to 200%.');
+    const flags=($('gyro-invert-x').checked?1:0)|($('gyro-invert-y').checked?2:0)|($('gyro-fire').checked?4:0);
+    result=await command('STEAM_AIM_SET',$('gyro-enabled').checked?'1':'0',sensitivity,$('gyro-activation').value,flags,$('gyro-pause').value,$('touch-mouse').checked?'1':'0');
+  }
+  else result=await command('TOUCH_MOUSE_SET',$('touch-mouse').checked?'1':'0');
+  expectedRestart=Boolean(result.restart_required);
+  status(expectedRestart?'Mouse setting saved. Reconnect after the adapter restarts.':'Mouse setting saved.');
+  if(!expectedRestart)await loadPointer();
+});
+</script>
+</html>

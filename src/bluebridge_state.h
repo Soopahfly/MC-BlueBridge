@@ -2,11 +2,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "steam_aim.h"
 
-#define BLUEBRIDGE_VERSION "1.1.0"
-#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=13"
+#define BLUEBRIDGE_VERSION "1.1.0-controller-preview"
+#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=14"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
-#define BB_CONFIG_SCHEMA 13
+#define BB_CONFIG_SCHEMA 14
 #define BB_MAX_NAME 32
 #define BB_MAX_PROFILE_NAME 24
 #define BB_MAX_CONTROLLERS 8
@@ -35,6 +36,12 @@ typedef enum {
     BB_OUTPUT_DUALSENSE = 6
 } bb_output_mode_t;
 
+bool bb_touch_mouse_get(void);
+bool bb_touch_mouse_current(void);
+void bb_touch_mouse_set(bool enabled);
+bb_steam_aim_t bb_steam_aim_get(void);
+bb_steam_aim_t bb_steam_aim_current(void);
+bool bb_pointer_settings_set(bb_steam_aim_t settings,bool mouse);
 #define BB_OUTPUT_LAST BB_OUTPUT_DUALSENSE
 
 typedef struct __attribute__((packed)) {
@@ -109,8 +116,11 @@ typedef struct __attribute__((packed)) {
     uint8_t single_output_mode;
     uint8_t blocked_device_count;
     bb_blocked_device_t blocked_devices[BB_MAX_BLOCKED_DEVICES];
+    uint8_t touch_mouse_enabled;
+    bb_steam_aim_t steam_aim;
 } bb_config_t;
 
+#define BB_CONFIG_V13_SIZE offsetof(bb_config_t, touch_mouse_enabled)
 #define BB_CONFIG_V12_SIZE offsetof(bb_config_t, blocked_device_count)
 #define BB_CONFIG_V11_SIZE offsetof(bb_config_t, multi_controller)
 bool bb_multi_mode(void);

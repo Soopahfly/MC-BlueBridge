@@ -2,6 +2,8 @@
 #include "bluebridge_state.h"
 #include "usb_device.h"
 #include "btstack.h"
+#include "pico/stdlib.h"
+#include "steam_controller.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -22,6 +24,8 @@
 #define HID_USAGE_BATTERY_STRENGTH 0x20
 
 typedef struct {
+    bb_ds4_pointer_t pointer;
+    bb_steam_controller_t steam;
     uint8_t early_arcade_battery_report[2];
     bool have_early_arcade_battery_report;
     int16_t diagnostic_battery_request_status;
@@ -769,6 +773,14 @@ static bool parse_ds4_common(const uint8_t* p, uint16_t len, uint8_t base, bool 
         uint8_t pct = level >= 10 ? 100 : (uint8_t)(level * 10u + 5u);
         bb_state_update_battery(true, pct, (v & 0x10) ? 2 : 1);
     }
+    if(bb_usb_touch_mouse_enabled()) {
+        bb_pointer_sample_t pointer;
+        if(bb_ds4_pointer_decode(&driver_slots[bb_slot_current()].pointer,p,len,
+            to_ms_since_boot(get_absolute_time()),&pointer)) {
+            bb_usb_touch_mouse_submit(pointer,false);
+            s.buttons&=~(1u<<13); /* Touchpad click belongs to the mouse in this mode. */
+        }
+    } else memset(&driver_slots[bb_slot_current()].pointer,0,sizeof(bb_ds4_pointer_t));
     submit_state(&s);
     return true;
 }
@@ -1351,6 +1363,9 @@ static bool parse_8bitdo_arcade(const uint8_t* report, uint16_t length) {
 }
 
 void bb_driver_reset(void) {
+    bb_usb_touch_mouse_release();
+    memset(&driver_slots[bb_slot_current()].pointer,0,sizeof(bb_ds4_pointer_t));
+    memset(&driver_slots[bb_slot_current()].steam,0,sizeof(bb_steam_controller_t));
     bb_usb_set_press_latch(false);
     memset(&identity, 0, sizeof(identity));
     hid_descriptor = NULL;
@@ -1510,6 +1525,22 @@ bool bb_driver_handle_xbox_ble_report(const uint8_t* report, uint16_t length) {
     bb_state_update_button_capabilities(capabilities);
     submit_state(&state);
     return true;
+}
+
+int bb_driver_handle_steam_ble_report(const uint8_t* report,uint16_t length) {
+    if(!report)return -1;
+    record_input_report(report,length);
+    bool mouse=bb_usb_touch_mouse_enabled();
+    bb_input_state_t input;bb_pointer_sample_t pointer;
+    driver_slots[bb_slot_current()].steam.aim=bb_steam_aim_current();
+    int result=bb_steam_controller_decode(&driver_slots[bb_slot_current()].steam,report,length,
+        to_ms_since_boot(get_absolute_time()),mouse,&input,&pointer);
+    if(result==1) {
+        bb_state_update_button_capabilities(0x00033fffu);
+        if(mouse)bb_usb_touch_mouse_submit(pointer,true);
+        submit_state(&input);
+    }
+    return result;
 }
 
 bool bb_driver_handle_hid_report(const uint8_t* report, uint16_t length) {
