@@ -91,7 +91,7 @@ compiler warnings are outside this controller contribution.
 - [x] Native tests for calibration CRC/ranges, units, settings, stale/duplicate/wrapped timestamps and isolation.
 - [x] Actual config-page simulated serial tests, including independent DS4 and Steam options.
 - [x] Build final preview.2 UF2, audit USB descriptors and verify controller-only scope.
-- [ ] Back up the tested source changes to the owner's GitHub branch; keep upstream PR unopened.
+- [x] Back up tested source changes to the owner's GitHub branch (implementation commit 80cc9b4); upstream PR remains unopened.
 - [ ] Hardware: Sony DS4 v1/v2 factory calibration, full reports and sensor readout while moving/still.
 - [ ] Hardware: gyro directions, sensitivity, stationary drift, touch/L2 activation, pause/R2 fire and releases.
 - [ ] Hardware: invalid/missing calibration keeps motion inactive; buttons/touchpad/reconnect remain usable.
