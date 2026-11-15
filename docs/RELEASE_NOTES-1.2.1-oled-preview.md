@@ -59,3 +59,12 @@ user's controller. The firmware has not yet been physically validated.
 
 MiSTer input and motor test reference:
 https://mister-devel.github.io/MkDocs_MiSTer/basics/input/
+
+Live installation (15 November 2026): no-OLED 1.2.1 installed successfully with
+Preserve Configuration. The prior schema-20 settings were still in flash and
+were recovered, including enabled mouse/gyro and two controller records. Stock
+upstream had shown empty runtime defaults because it could not load that fork
+layout. The earlier backed-up controller record and all global settings match
+byte-for-byte; an additional saved controller record is retained. Stock schema
+14 conversion is tested separately using the pre-update export and synthetic
+profiles. Right-click and separate rumble still await the user's hardware check.
