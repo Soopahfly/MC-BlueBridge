@@ -74,7 +74,7 @@ int main(void) {
     for(unsigned c=0;c<BB_MAX_CONTROLLERS;++c)
         for(unsigned p=0;p<BB_MAX_PROFILES;++p) assert(loaded.oled_pew[c][p]==0);
     bb_state_init(); bb_config_get(&loaded);
-    assert(loaded.schema==18 && loaded.controllers[0].native_product_id==2);
+    assert(loaded.schema==BB_CONFIG_SCHEMA && loaded.controllers[0].native_product_id==2);
     assert(bb_panel_input_get()==BB_PANEL_ENCODER); /* Existing installations keep encoder behavior. */
     assert(bb_profile_oled_get(0)==0);
     /* Old exports are padded by the CDC importer before validation. */
@@ -151,5 +151,28 @@ int main(void) {
     bb_config_get(&loaded);loaded.steam_aim.flags=8;assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
     loaded.schema=17;assert(bb_config_import(&loaded,bb_config_checksum(&loaded)));
     assert(!bb_steam_aim_get().enabled&&bb_touch_mouse_get());}
+    /* Schema 18 preserves Steam aiming and mouse; DS4 gyro defaults off. */
+    bb_config_get(&loaded);loaded.schema=18;loaded.touch_mouse_enabled=1;
+    loaded.steam_aim=(bb_steam_aim_t){1,125,2,3,16};
+    uint32_t v18_header[]={0x42424733u,BB_CONFIG_V18_SIZE,hash(&loaded,BB_CONFIG_V18_SIZE)};
+    memcpy(test_flash+base,v18_header,sizeof(v18_header));
+    memcpy(test_flash+base+sizeof(v18_header),&loaded,BB_CONFIG_V18_SIZE);
+    bb_state_init();
+    assert(bb_touch_mouse_current()&&bb_steam_aim_current().enabled&&bb_steam_aim_current().sensitivity==125);
+    bb_steam_aim_t ds4=bb_ds4_aim_get();assert(!ds4.enabled&&ds4.activation==1&&ds4.pause_button==10&&ds4.flags==BB_AIM_INVERT_X);
+    ds4.enabled=1;ds4.sensitivity=140;
+    assert(bb_ds4_pointer_settings_set(ds4,true));
+    assert(!bb_ds4_aim_current().enabled&&bb_steam_aim_get().sensitivity==125);
+    test_time+=250;bb_config_flush_pending();bb_state_init();
+    assert(bb_ds4_aim_current().enabled&&bb_ds4_aim_current().sensitivity==140);
+    ds4.pause_button=14;assert(!bb_ds4_pointer_settings_set(ds4,true));
+    bb_config_get(&loaded);loaded.ds4_aim.flags=8;assert(!bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    loaded.schema=18;assert(bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    assert(!bb_ds4_aim_get().enabled&&bb_steam_aim_get().enabled&&bb_touch_mouse_get());
+    /* Existing schema-19 choices must survive the new factory default. */
+    bb_config_get(&loaded);loaded.ds4_aim.flags=0;
+    assert(bb_config_import(&loaded,bb_config_checksum(&loaded)));
+    test_time+=250;bb_config_flush_pending();bb_state_init();
+    assert(bb_ds4_aim_get().flags==0);
     printf("state: edge events, profile lifecycle, flash round-trip and schema migration passed (%zu bytes)\n",sizeof(cfg));
 }

@@ -15,6 +15,9 @@ env["PATH"] = str(Path(cc).parent) + os.pathsep + env.get("PATH", "")
 out = root / "build-host"
 out.mkdir(exist_ok=True)
 for name, sources in {
+    "lightbar": ["tests/test_lightbar.c", "src/lightbar.c"],
+    "lightbar-state": ["tests/test_lightbar_state.c", "src/bluebridge_state.c", "src/config_store.c"],
+    "ds4-gyro": ["tests/test_ds4_gyro.c", "src/ds4_gyro.c", "src/touch_mouse.c"],
     "steam-ble": ["tests/test_steam_ble.c", "src/steam_ble.c"],
     "steam-controller": ["tests/test_steam_controller.c", "src/steam_controller.c"],
     "touch-mouse": ["tests/test_touch_mouse.c", "src/touch_mouse.c"],

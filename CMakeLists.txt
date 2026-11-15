@@ -128,6 +128,8 @@ add_executable(mc_bluebridge
   src/steam_ble.c
   src/steam_controller.c
   src/touch_mouse.c
+  src/ds4_gyro.c
+  src/lightbar.c
   src/usb_report_queue.c
   src/usb_device.c
   src/usb_descriptors.c

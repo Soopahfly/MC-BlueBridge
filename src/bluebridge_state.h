@@ -3,11 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "steam_aim.h"
+#include "lightbar.h"
 
-#define BLUEBRIDGE_VERSION "1.1.2-oled"
-#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=18"
+#define BLUEBRIDGE_VERSION "1.1.6-oled"
+#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=20"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
-#define BB_CONFIG_SCHEMA 18
+#define BB_CONFIG_SCHEMA 20
 #define BB_MAX_NAME 32
 #define BB_MAX_PROFILE_NAME 24
 #define BB_MAX_CONTROLLERS 8
@@ -49,6 +50,9 @@ bb_steam_aim_t bb_steam_aim_get(void);
 bb_steam_aim_t bb_steam_aim_current(void);
 bool bb_steam_aim_set(bb_steam_aim_t settings);
 bool bb_pointer_settings_set(bb_steam_aim_t settings,bool mouse);
+bb_steam_aim_t bb_ds4_aim_get(void);
+bb_steam_aim_t bb_ds4_aim_current(void);
+bool bb_ds4_pointer_settings_set(bb_steam_aim_t settings,bool mouse);
 bool bb_oled_enabled_current(void);
 const char* bb_panel_input_name(bb_panel_input_t input);
 #define BB_OUTPUT_LAST BB_OUTPUT_DUALSENSE
@@ -132,8 +136,17 @@ typedef struct __attribute__((packed)) {
     uint8_t oled_enabled;
     uint8_t touch_mouse_enabled;
     bb_steam_aim_t steam_aim;
+    bb_steam_aim_t ds4_aim;
+    bb_lightbar_config_t lightbar;
 } bb_config_t;
 
+#define BB_CONFIG_V19_SIZE offsetof(bb_config_t, lightbar)
+void bb_lightbar_get(bb_lightbar_config_t* out);
+bool bb_lightbar_palette_set(uint8_t theme,const bb_rgb_t players[4]);
+bool bb_lightbar_controller_set(uint8_t index,uint32_t id,bb_lightbar_choice_t choice);
+bool bb_lightbar_controller_get(uint8_t index,uint32_t* id,bb_lightbar_choice_t* out);
+bb_rgb_t bb_lightbar_colour(unsigned index,unsigned slot);
+#define BB_CONFIG_V18_SIZE offsetof(bb_config_t, ds4_aim)
 #define BB_CONFIG_V17_SIZE offsetof(bb_config_t, steam_aim)
 #define BB_CONFIG_V16_SIZE offsetof(bb_config_t, touch_mouse_enabled)
 #define BB_CONFIG_V15_SIZE offsetof(bb_config_t, oled_enabled)

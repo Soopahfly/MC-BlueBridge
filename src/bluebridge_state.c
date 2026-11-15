@@ -14,6 +14,7 @@ static bb_panel_input_t boot_panel_input;
 static bool boot_oled_enabled;
 static bool boot_touch_mouse;
 static bb_steam_aim_t boot_steam_aim;
+static bb_steam_aim_t boot_ds4_aim;
 static volatile bool mode_restart;
 #define runtime_state runtime_slots[bb_slot_current()]
 static bb_config_t config_state;
@@ -36,7 +37,58 @@ static uint32_t capture_masks[BB_MAX_SLOTS];
 #define capture_button_mask capture_masks[bb_slot_current()]
 static int management_controller_index = -1;
 
+_Static_assert(BB_MAX_CONTROLLERS==BB_LIGHTBAR_CONTROLLERS,"Lightbar controller count mismatch");
+void bb_lightbar_get(bb_lightbar_config_t* out) {
+    if(!out)return;
+    critical_section_enter_blocking(&lock);*out=config_state.lightbar;critical_section_exit(&lock);
+}
+bool bb_lightbar_palette_set(uint8_t theme,const bb_rgb_t players[4]) {
+    if(!players)return false;
+    if(theme>2)return false;
+    bb_rgb_t expected[2];
+    if(theme && (!bb_lightbar_theme_colours(theme,expected)||memcmp(players,expected,sizeof(expected))))return false;
+    critical_section_enter_blocking(&lock);
+    if(config_state.lightbar.theme!=theme || memcmp(config_state.lightbar.players,players,sizeof(config_state.lightbar.players))) {
+        config_state.lightbar.theme=theme;
+        memcpy(config_state.lightbar.players,players,sizeof(config_state.lightbar.players));request_save_locked();
+    }
+    critical_section_exit(&lock);return true;
+}
+bool bb_lightbar_controller_set(uint8_t index,uint32_t id,bb_lightbar_choice_t choice) {
+    if(choice.player>4||choice.custom_enabled>1)return false;
+    critical_section_enter_blocking(&lock);
+    bool ok=index<config_state.controller_count&&config_state.controllers[index].id==id;
+    if(ok && memcmp(&config_state.lightbar.controllers[index],&choice,sizeof(choice))) {
+        config_state.lightbar.controllers[index]=choice;request_save_locked();
+    }
+    critical_section_exit(&lock);return ok;
+}
+bool bb_lightbar_controller_get(uint8_t index,uint32_t* id,bb_lightbar_choice_t* out) {
+    critical_section_enter_blocking(&lock);
+    bool ok=index<config_state.controller_count;
+    if(ok){if(id)*id=config_state.controllers[index].id;if(out)*out=config_state.lightbar.controllers[index];}
+    critical_section_exit(&lock);return ok;
+}
+bb_rgb_t bb_lightbar_colour(unsigned index,unsigned slot) {
+    critical_section_enter_blocking(&lock);
+    bb_rgb_t value=bb_lightbar_resolve(&config_state.lightbar,index,slot);
+    critical_section_exit(&lock);return value;
+}
+
 bb_steam_aim_t bb_steam_aim_current(void){return boot_steam_aim;}
+bb_steam_aim_t bb_ds4_aim_current(void){return boot_ds4_aim;}
+bb_steam_aim_t bb_ds4_aim_get(void){
+    critical_section_enter_blocking(&lock);bb_steam_aim_t a=config_state.ds4_aim;
+    critical_section_exit(&lock);return a;
+}
+bool bb_ds4_pointer_settings_set(bb_steam_aim_t a,bool mouse){
+    if(!bb_ds4_aim_valid(a))return false;
+    critical_section_enter_blocking(&lock);
+    if(memcmp(&a,&config_state.ds4_aim,sizeof(a))){config_state.ds4_aim=a;request_save_locked();}
+    if(config_state.touch_mouse_enabled!=mouse){config_state.touch_mouse_enabled=mouse;request_save_locked();}
+    if(mouse!=boot_touch_mouse || memcmp(&a,&boot_ds4_aim,sizeof(a)))mode_restart=true;
+    critical_section_exit(&lock);return true;
+}
 bb_steam_aim_t bb_steam_aim_get(void){
     critical_section_enter_blocking(&lock);bb_steam_aim_t a=config_state.steam_aim;
     critical_section_exit(&lock);return a;
@@ -188,6 +240,8 @@ static void init_defaults(bb_config_t* cfg) {
     cfg->schema = BB_CONFIG_SCHEMA;
     cfg->oled_enabled=1;
     cfg->steam_aim=bb_steam_aim_defaults();
+    cfg->ds4_aim=bb_ds4_aim_defaults();
+    cfg->lightbar=bb_lightbar_defaults();
     cfg->output_mode = BB_OUTPUT_MISTER;
     cfg->next_controller_id = 1;
     cfg->next_profile_id = 1;
@@ -215,11 +269,13 @@ void bb_state_init(void) {
     }
     if (!bb_config_load(&config_state)) {
         init_defaults(&config_state);
-    } else if (config_state.schema >= 8 && config_state.schema <= 17) {
+    } else if (config_state.schema >= 8 && config_state.schema <= 19) {
         if(config_state.schema<15)config_state.panel_input=BB_PANEL_ENCODER;
         if(config_state.schema<16)config_state.oled_enabled=1;
         if(config_state.schema<17)config_state.touch_mouse_enabled=0;
-        config_state.steam_aim=bb_steam_aim_defaults();
+        if(config_state.schema<18)config_state.steam_aim=bb_steam_aim_defaults();
+        if(config_state.schema<19)config_state.ds4_aim=bb_ds4_aim_defaults();
+        config_state.lightbar=bb_lightbar_defaults();
         config_state.schema = BB_CONFIG_SCHEMA;
         if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_LAST) config_state.output_mode = BB_OUTPUT_MISTER;
         request_save_locked();
@@ -231,6 +287,9 @@ void bb_state_init(void) {
     }
     if(!bb_steam_aim_valid(config_state.steam_aim)){config_state.steam_aim=bb_steam_aim_defaults();request_save_locked();}
     boot_steam_aim=config_state.steam_aim;
+    if(!bb_ds4_aim_valid(config_state.ds4_aim)){config_state.ds4_aim=bb_ds4_aim_defaults();request_save_locked();}
+    boot_ds4_aim=config_state.ds4_aim;
+    if(!bb_lightbar_valid(&config_state.lightbar)){config_state.lightbar=bb_lightbar_defaults();request_save_locked();}
     boot_touch_mouse=config_state.touch_mouse_enabled==1;
     if(config_state.touch_mouse_enabled>1){config_state.touch_mouse_enabled=0;request_save_locked();}
     boot_multi = config_state.multi_controller == 1;
@@ -956,9 +1015,11 @@ bool bb_controller_forget(uint8_t index, uint8_t address_out[6]) {
             config_state.controllers[i] = config_state.controllers[i + 1];
             memcpy(config_state.oled_pew[i], config_state.oled_pew[i + 1], BB_MAX_PROFILES);
             memcpy(config_state.controller_names[i], config_state.controller_names[i + 1], BB_MAX_NAME);
+            config_state.lightbar.controllers[i]=config_state.lightbar.controllers[i+1];
         }
         memset(config_state.controller_names[config_state.controller_count - 1], 0, BB_MAX_NAME);
         memset(config_state.oled_pew[config_state.controller_count - 1], 0, BB_MAX_PROFILES);
+        config_state.lightbar.controllers[config_state.controller_count-1]=(bb_lightbar_choice_t){.rgb=config_state.lightbar.players[0]};
         config_state.controller_count--;
         if (boot_multi) {
             for (unsigned slot = 0; slot < BB_MAX_SLOTS; ++slot) {
@@ -1128,6 +1189,7 @@ bool bb_controller_activate_or_create(const uint8_t address[6], uint16_t vendor_
         set_name(controller->name, sizeof(controller->name), name, "Bluetooth Controller");
         memset(config_state.controller_names[index], 0, BB_MAX_NAME);
         memset(config_state.oled_pew[index], 0, BB_MAX_PROFILES);
+        config_state.lightbar.controllers[index]=(bb_lightbar_choice_t){.rgb=config_state.lightbar.players[0]};
         controller->profile_count = 1;
         controller->active_profile = 0;
         uint16_t identity = allocate_mister_identity_locked();
@@ -1232,6 +1294,10 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     value = *cfg;
     value.schema = BB_CONFIG_SCHEMA;
     if(cfg->schema<18)value.steam_aim=bb_steam_aim_defaults();
+    if(cfg->schema<19)value.ds4_aim=bb_ds4_aim_defaults();
+    if(cfg->schema<20)value.lightbar=bb_lightbar_defaults();
+    if(!bb_lightbar_valid(&value.lightbar))return false;
+    if(!bb_ds4_aim_valid(value.ds4_aim))return false;
     if(!bb_steam_aim_valid(value.steam_aim))return false;
     if(cfg->schema<17)value.touch_mouse_enabled=0;
     if(value.touch_mouse_enabled>1)return false;

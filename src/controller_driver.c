@@ -4,6 +4,7 @@
 #include "btstack.h"
 #include "pico/stdlib.h"
 #include "steam_controller.h"
+#include "ds4_gyro.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -25,6 +26,7 @@
 
 typedef struct {
     bb_ds4_pointer_t pointer;
+    bb_ds4_gyro_t ds4_gyro;
     bb_steam_controller_t steam;
     uint8_t early_arcade_battery_report[2];
     bool have_early_arcade_battery_report;
@@ -777,10 +779,16 @@ static bool parse_ds4_common(const uint8_t* p, uint16_t len, uint8_t base, bool 
         bb_pointer_sample_t pointer;
         if(bb_ds4_pointer_decode(&driver_slots[bb_slot_current()].pointer,p,len,
             to_ms_since_boot(get_absolute_time()),&pointer)) {
+            bb_ds4_gyro_apply(&driver_slots[bb_slot_current()].ds4_gyro,p,
+                to_ms_since_boot(get_absolute_time()),bb_ds4_aim_current(),
+                driver_slots[bb_slot_current()].pointer.touching,&s,&pointer);
             bb_usb_touch_mouse_submit(pointer,false);
             s.buttons&=~(1u<<13); /* Touchpad click belongs to the mouse in this mode. */
         }
-    } else memset(&driver_slots[bb_slot_current()].pointer,0,sizeof(bb_ds4_pointer_t));
+    } else {
+        memset(&driver_slots[bb_slot_current()].pointer,0,sizeof(bb_ds4_pointer_t));
+        memset(&driver_slots[bb_slot_current()].ds4_gyro,0,sizeof(bb_ds4_gyro_t));
+    }
     submit_state(&s);
     return true;
 }
@@ -1365,6 +1373,7 @@ static bool parse_8bitdo_arcade(const uint8_t* report, uint16_t length) {
 void bb_driver_reset(void) {
     bb_usb_touch_mouse_release();
     memset(&driver_slots[bb_slot_current()].pointer,0,sizeof(bb_ds4_pointer_t));
+    memset(&driver_slots[bb_slot_current()].ds4_gyro,0,sizeof(bb_ds4_gyro_t));
     memset(&driver_slots[bb_slot_current()].steam,0,sizeof(bb_steam_controller_t));
     bb_usb_set_press_latch(false);
     memset(&identity, 0, sizeof(identity));

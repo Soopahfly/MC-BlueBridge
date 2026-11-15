@@ -23,11 +23,31 @@ physical wiring and controller-latency validation remain outstanding.
 This fork now incorporates upstream **v1.1.0**, retaining the OLED, encoder,
 trackball, PEW, stack, save and USB queue fixes. It adds an optional **DS4
 Bluetooth touchpad to USB mouse** setting for single-controller MiSTer mode.
-This defaults off and awaits hardware validation. Fork version **1.1.2** adds optional config-app gyro aiming, sensitivity, activation,
+The user has verified DS4 touchpad mouse operation in the Amiga core on a
+no-OLED adapter. Fork version **1.1.2** adds optional config-app gyro aiming, sensitivity, activation,
 axis inversion, hold-to-pause and trigger-to-fire controls alongside
 experimental original **Valve Steam Controller BLE** input and right-touchpad
 mouse support using the same saved checkbox. See [Steam setup and test plan](docs/STEAM_PLAN.md)
 and [the guide](docs/OLED.md).
+
+The **1.1.3 preview** adds independent, default-off **DS4 gyro mouse** settings
+to the existing MiSTer Companion Remote BlueBridge page using the included
+`tools/companion_remote_mouse.py` integration. Both OLED/encoder and no-OLED
+builds are maintained. See [setup, migration and validation](docs/RELEASE_NOTES-1.1.3-oled-preview.md).
+
+**1.1.4 preview** makes horizontal inversion the DS4 gyro default after the
+user's successful hardware test. Existing saved choices remain intact; gyro
+itself still defaults off. See [release notes](docs/RELEASE_NOTES-1.1.4-oled-preview.md).
+
+**1.1.5 preview** adds live DS4 light-bar colours to the same MiSTer web GUI:
+Nintendo (default: P1 red/P2 green), Sega (P1 blue/P2 orange), and Custom themes,
+plus per-controller preset/custom overrides. Automatic colours follow BlueBridge
+slots rather than MiSTer player assignment. See [setup and validation](docs/RELEASE_NOTES-1.1.5-oled-preview.md).
+
+**1.1.6 preview** adds an automatic DS4 low-battery light-bar blink below 20%,
+retaining the player colour. Charging or recovery to 25% restores a solid light.
+Both firmware builds include it; no GUI update is required. See
+[behaviour and validation](docs/RELEASE_NOTES-1.1.6-oled-preview.md).
 
 ### Screenshots and demonstrations
 
