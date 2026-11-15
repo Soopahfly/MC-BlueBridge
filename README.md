@@ -49,6 +49,11 @@ retaining the player colour. Charging or recovery to 25% restores a solid light.
 Both firmware builds include it; no GUI update is required. See
 [behaviour and validation](docs/RELEASE_NOTES-1.1.6-oled-preview.md).
 
+**1.2.0 preview** incorporates upstream v1.2.0 controller connectivity, DS3,
+8BitDo, NSO LED and MiSTer shortcut improvements in both maintained builds,
+while retaining the OLED/encoder/trackball, Steam and DS4 features. Saved
+configuration stays on schema 20. See [release notes and validation](docs/RELEASE_NOTES-1.2.0-oled-preview.md).
+
 ### Screenshots and demonstrations
 
 The images below are simulated frames from the firmware renderer, not hardware
