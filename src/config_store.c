@@ -153,6 +153,10 @@ bool bb_config_load(bb_config_t* cfg) {
     const stored_header_t* header = (const stored_header_t*)base;
     if (header->magic != BB_CFG_MAGIC) return false;
     const uint8_t* payload = base + sizeof(stored_header_t);
+    if(header->size==BB_CONFIG_UPSTREAM14_SIZE) {
+        if(header->checksum!=checksum_bytes(payload,header->size))return false;
+        return bb_config_from_upstream14(payload,header->size,cfg);
+    }
     if (header->size == sizeof(bb_config_t)) {
         const bb_config_t* stored = (const bb_config_t*)payload;
         if (header->checksum != checksum_bytes(stored, sizeof(*stored))) return false;

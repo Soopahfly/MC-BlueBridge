@@ -4,9 +4,9 @@ static uint32_t byte_crc(uint32_t crc,uint8_t byte) {
     for(unsigned i=0;i<8;i++)crc=(crc>>1)^((crc&1u)?0xedb88320u:0);
     return crc;
 }
-void bb_ds4_output_build(uint8_t p[78],uint8_t strength,bb_rgb_t colour,bool low_battery,bool update_blink) {
+void bb_ds4_output_build(uint8_t p[78],uint8_t big,uint8_t small,bb_rgb_t colour,bool low_battery,bool update_blink) {
     memset(p,0,78);p[0]=0x11;p[1]=0xc4;p[3]=update_blink?0x07:0x03;
-    p[6]=strength;p[7]=strength;p[8]=colour.r;p[9]=colour.g;p[10]=colour.b;
+    p[6]=small;p[7]=big;p[8]=colour.r;p[9]=colour.g;p[10]=colour.b;
     /* DS4 hardware timing is in 10 ms units: 1 s on, 1 s off. Sending
      * zero for both durations restores a solid light. Only update blink timing
      * when it changes, so repeated rumble reports cannot restart its phase. */

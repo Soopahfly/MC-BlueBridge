@@ -54,6 +54,10 @@ Both firmware builds include it; no GUI update is required. See
 while retaining the OLED/encoder/trackball, Steam and DS4 features. Saved
 configuration stays on schema 20. See [release notes and validation](docs/RELEASE_NOTES-1.2.0-oled-preview.md).
 
+**1.2.1 preview** adds DS4 left/right touchpad clicks and independent rumble
+motors while retaining colours and battery blink. Both variants retain schema
+20. See [usage and validation](docs/RELEASE_NOTES-1.2.1-oled-preview.md).
+
 ### Screenshots and demonstrations
 
 The images below are simulated frames from the firmware renderer, not hardware

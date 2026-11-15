@@ -13,7 +13,7 @@ void bb_ds4_gyro_apply(bb_ds4_gyro_t* s,const uint8_t* p,uint32_t now,
     if(!aim.enabled||!bb_ds4_aim_valid(aim)){memset(s,0,sizeof(*s));return;}
     bool paused=aim.pause_button<32 && (input->buttons&(1u<<aim.pause_button));
     if(aim.pause_button<32)input->buttons&=~(1u<<aim.pause_button);
-    if(paused && aim.pause_button==13)pointer->buttons&=~1u;
+    if(paused && aim.pause_button==13)pointer->buttons&=~3u;
     bool active=!paused && (aim.activation==0 || (aim.activation==1&&touching) ||
         (aim.activation==2&&(input->lt>=128 || (input->buttons&(1u<<6)))));
     if(aim.flags&BB_AIM_TRIGGER_FIRE) {

@@ -759,7 +759,7 @@ static void handle_command(char* text) {
         char* size = next_field(&cursor);
         char* checksum = next_field(&cursor);
         int schema_value = schema ? atoi(schema) : 0;
-        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 14 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V14_SIZE) || (schema_value == 15 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V15_SIZE) || (schema_value == 19 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V19_SIZE) || (schema_value == 18 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V18_SIZE) || (schema_value == 17 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V17_SIZE) || (schema_value == 16 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V16_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13 && schema_value != 14 && schema_value != 15 && schema_value != 16 && schema_value != 17 && schema_value != 18 && schema_value != 19))) {
+        if (!schema || !size || !checksum || ((schema_value == BB_CONFIG_SCHEMA && (size_t)strtoul(size, NULL, 10) != sizeof(bb_config_t)) || ((schema_value == 8 || schema_value == 9) && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_LEGACY_SIZE) || (schema_value == 10 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V10_SIZE) || (schema_value == 11 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V11_SIZE) || (schema_value == 12 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V12_SIZE) || (schema_value == 13 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V13_SIZE) || (schema_value == 14 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V14_SIZE && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_UPSTREAM14_SIZE) || (schema_value == 15 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V15_SIZE) || (schema_value == 19 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V19_SIZE) || (schema_value == 18 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V18_SIZE) || (schema_value == 17 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V17_SIZE) || (schema_value == 16 && (size_t)strtoul(size, NULL, 10) != BB_CONFIG_V16_SIZE) || (schema_value != BB_CONFIG_SCHEMA && schema_value != 8 && schema_value != 9 && schema_value != 10 && schema_value != 11 && schema_value != 12 && schema_value != 13 && schema_value != 14 && schema_value != 15 && schema_value != 16 && schema_value != 17 && schema_value != 18 && schema_value != 19))) {
             import_active = false;
             send_err(id, "config_header");
             return;
@@ -793,7 +793,13 @@ static void handle_command(char* text) {
     if (!strcmp(cmd, "CONFIG_IMPORT_COMMIT")) {
         uint32_t hash = 2166136261u;
         for (size_t i = 0; i < import_received; ++i) { hash ^= import_bytes[i]; hash *= 16777619u; }
-        if (!import_active || import_received != import_size || hash != import_checksum || import_cfg.schema != import_schema || !bb_config_import(&import_cfg, bb_config_checksum(&import_cfg))) {
+        bool valid=import_active&&import_received==import_size&&hash==import_checksum&&import_cfg.schema==import_schema;
+        if(valid&&import_schema==14&&import_size==BB_CONFIG_UPSTREAM14_SIZE) {
+            /* Commands are serialized on core 1; reuse export scratch rather than stack. */
+            valid=bb_config_from_upstream14(&import_cfg,import_size,&export_cfg);
+            if(valid)import_cfg=export_cfg;
+        }
+        if (!valid || !bb_config_import(&import_cfg, bb_config_checksum(&import_cfg))) {
             import_active = false;
             send_err(id, "config_import");
             return;

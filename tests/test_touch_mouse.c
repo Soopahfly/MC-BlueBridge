@@ -21,7 +21,7 @@ int main(void) {
     assert(bb_ds4_pointer_decode(&state,p,78,3,&sample)&&!sample.x); /* Duplicate history does not replay. */
     point(p,3,0x87,0,0);assert(bb_ds4_pointer_decode(&state,p,78,4,&sample));
     point(p,4,8,1500,600);assert(bb_ds4_pointer_decode(&state,p,78,5,&sample)&&!sample.x); /* Lift/re-touch. */
-    p[9]=2;checksum(p);assert(bb_ds4_pointer_decode(&state,p,78,6,&sample)&&sample.buttons==1);
+    p[9]=2;checksum(p);assert(bb_ds4_pointer_decode(&state,p,78,6,&sample)&&sample.buttons==2);
     p[9]=0;checksum(p);assert(bb_ds4_pointer_decode(&state,p,78,7,&sample)&&!sample.buttons);
     p[38]^=1;assert(!bb_ds4_pointer_decode(&state,p,78,8,&sample)); /* CRC. */
     assert(!bb_ds4_pointer_decode(&state,p,12,8,&sample));
@@ -30,6 +30,23 @@ int main(void) {
     point(p,0,3,504,304);assert(bb_ds4_pointer_decode(&state,p,78,10,&sample)&&sample.x==1&&sample.y==1);
     point(p,1,3,1500,500);assert(bb_ds4_pointer_decode(&state,p,78,11,&sample)&&!sample.x); /* Jump rejected. */
     point(p,2,3,1516,516);assert(bb_ds4_pointer_decode(&state,p,78,1000,&sample)&&!sample.x); /* Stale baseline. */
+    /* Right-half click stays right through movement and contact lift. */
+    memset(&state,0,sizeof(state));p[9]=2;point(p,1,1,1500,300);
+    assert(bb_ds4_pointer_decode(&state,p,78,1001,&sample)&&sample.buttons==2);
+    point(p,2,1,900,300);assert(bb_ds4_pointer_decode(&state,p,78,1002,&sample)&&sample.buttons==2);
+    point(p,3,0x81,0,0);assert(bb_ds4_pointer_decode(&state,p,78,1003,&sample)&&sample.buttons==2);
+    p[9]=0;checksum(p);assert(bb_ds4_pointer_decode(&state,p,78,1004,&sample)&&!sample.buttons);
+    p[9]=2;checksum(p);assert(bb_ds4_pointer_decode(&state,p,78,1005,&sample)&&sample.buttons==1); /* No finger. */
+    p[9]=0;point(p,4,2,959,300);bb_ds4_pointer_decode(&state,p,78,1006,&sample);
+    p[9]=2;checksum(p);assert(bb_ds4_pointer_decode(&state,p,78,1007,&sample)&&sample.buttons==1);
+    point(p,5,2,1000,300);assert(bb_ds4_pointer_decode(&state,p,78,1008,&sample)&&sample.buttons==1);
+    p[9]=0;point(p,6,2,960,300);bb_ds4_pointer_decode(&state,p,78,1009,&sample);
+    p[9]=2;checksum(p);assert(bb_ds4_pointer_decode(&state,p,78,1010,&sample)&&sample.buttons==2);
+    bb_ds4_pointer_t unchanged=state;p[74]^=1;
+    assert(!bb_ds4_pointer_decode(&state,p,78,1011,&sample)&&!memcmp(&state,&unchanged,sizeof(state)));
+    /* Independent controller states must not inherit each other's held click. */
+    bb_ds4_pointer_t other={0};point(p,1,1,200,200);
+    assert(bb_ds4_pointer_decode(&other,p,78,1012,&sample)&&sample.buttons==1&&state.click_button==2);
     bb_mouse_queue_t queue={0};uint32_t token;
     bb_mouse_queue_push(&queue,(bb_pointer_sample_t){.x=300,.buttons=1});
     assert(bb_mouse_queue_peek(&queue,&sample,&token)&&sample.x==127&&sample.buttons==1);
@@ -49,5 +66,10 @@ int main(void) {
     bb_mouse_queue_ack(&queue,token,sample);
     for(unsigned i=0;i<20;i++)bb_mouse_queue_push(&queue,(bb_pointer_sample_t){.buttons=i&1});
     assert(queue.count==8&&queue.overflows);
+    bb_mouse_queue_t right={0};
+    bb_mouse_queue_push(&right,(bb_pointer_sample_t){.buttons=2});
+    assert(bb_mouse_queue_peek(&right,&sample,&token)&&sample.buttons==2);
+    bb_mouse_queue_ack(&right,token,sample);bb_mouse_queue_release(&right);
+    assert(bb_mouse_queue_peek(&right,&sample,&token)&&!sample.buttons);
     puts("DS4 pointer: CRC/length/history checks, motion, lift/contact changes, click, wrap, failed sends and queue edges passed");
 }

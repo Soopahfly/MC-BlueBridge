@@ -52,6 +52,12 @@ int main(void) {
     put16(12,++stamp);now+=10;pointer=(bb_pointer_sample_t){3,4,1};
     bb_ds4_gyro_apply(&gyro,report,now,a,false,&input,&pointer);
     assert(pointer.x==13&&pointer.y==-6&&pointer.buttons==1);
+    a.pause_button=13;input.buttons=1u<<13;pointer=(bb_pointer_sample_t){.buttons=2};
+    put16(12,++stamp);now+=10;bb_ds4_gyro_apply(&gyro,report,now,a,true,&input,&pointer);
+    assert(!pointer.buttons); /* Pausing on touchpad click consumes right-click too. */
+    a.pause_button=255;input.buttons=1u<<7;input.rt=220;a.flags=BB_AIM_TRIGGER_FIRE;
+    pointer=(bb_pointer_sample_t){.buttons=2};put16(12,++stamp);now+=10;
+    bb_ds4_gyro_apply(&gyro,report,now,a,true,&input,&pointer);assert(pointer.buttons==3);
     reset();a.activation=0;a.pause_button=255;
     step(a,0,16,false);int total=0;
     for(unsigned i=0;i<103;i++){step(a,0,16,false);total+=pointer.x;}

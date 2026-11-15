@@ -248,6 +248,25 @@ static void init_defaults(bb_config_t* cfg) {
     cfg->next_mister_identity = 1;
 }
 
+bool bb_config_from_upstream14(const void* data,size_t size,bb_config_t* out) {
+    _Static_assert(BB_CONFIG_UPSTREAM14_SIZE!=BB_CONFIG_V14_SIZE,"Schema-14 layouts must remain distinguishable");
+    if(!data||!out||data==(const void*)out||size!=BB_CONFIG_UPSTREAM14_SIZE)return false;
+    uint32_t schema;memcpy(&schema,data,sizeof(schema));if(schema!=14)return false;
+    const uint8_t* bytes=data;size_t at=BB_CONFIG_V13_SIZE;
+    uint8_t mouse=bytes[at++];bb_steam_aim_t aim;bb_lightbar_config_t lightbar;
+    memcpy(&aim,bytes+at,sizeof(aim));at+=sizeof(aim);
+    memcpy(&lightbar,bytes+at,sizeof(lightbar));
+    if(mouse>1||!bb_ds4_aim_valid(aim)||!bb_lightbar_valid(&lightbar))return false;
+    init_defaults(out);memcpy(out,bytes,BB_CONFIG_V13_SIZE);out->schema=BB_CONFIG_SCHEMA;
+    out->touch_mouse_enabled=mouse;out->ds4_aim=aim;out->lightbar=lightbar;
+    if(out->controller_count>BB_MAX_CONTROLLERS || (out->controller_count&&out->active_controller>=out->controller_count))return false;
+    for(unsigned i=0;i<out->controller_count;i++) {
+        if(!out->controllers[i].profile_count||out->controllers[i].profile_count>BB_MAX_PROFILES||
+           out->controllers[i].active_profile>=out->controllers[i].profile_count)return false;
+    }
+    return true;
+}
+
 uint32_t bb_config_checksum(const bb_config_t* cfg) {
     const uint8_t* p = (const uint8_t*)cfg;
     size_t n = sizeof(*cfg);

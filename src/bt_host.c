@@ -161,7 +161,8 @@ typedef struct {
     uint8_t dualsense_output_seq;
     uint8_t ds4_output_report[78];
     bb_rgb_t ds4_lightbar_sent;
-    bool ds4_lightbar_valid;
+    bool ds4_lightbar_valid,ds4_rumble_retry;
+    bb_ds4_motors_t ds4_motors_sent;
     bool ds4_low_battery,ds4_blink_sent;
     uint32_t ds4_lightbar_retry_at;
     bool ds4_descriptor_ready;
@@ -598,18 +599,26 @@ static bool send_switch_report_mode(uint8_t mode) {
     return send_classic_report(classic_hid_cid, 0x01, payload, sizeof(payload)) == ERROR_CODE_SUCCESS;
 }
 
-static bool send_ds4_rumble(uint8_t strength) {
-    if (!classic_hid_cid || current_identity.kind != BB_CONTROLLER_DUALSHOCK4 || ds4_activation_step == 2) return false;
+static bool send_ds4_motors(bb_ds4_motors_t motors) {
+    if (!classic_hid_cid || current_identity.kind != BB_CONTROLLER_DUALSHOCK4 || ds4_activation_step == 2) {
+        host_slots[bb_slot_current()].ds4_rumble_retry=classic_hid_cid&&current_identity.kind==BB_CONTROLLER_DUALSHOCK4;
+        return false;
+    }
     uint8_t* report = ds4_output_report;
     bb_rgb_t colour=bb_lightbar_colour((unsigned)current_controller_index,bb_slot_current());
     bb_runtime_state_t state;bb_state_get(&state);
     bb_host_context_t* slot=&host_slots[bb_slot_current()];
     slot->ds4_low_battery=bb_ds4_low_battery_blink(slot->ds4_low_battery,state.battery_supported,state.battery_percent,state.battery_state);
     bool update_blink=!slot->ds4_lightbar_valid||slot->ds4_blink_sent!=slot->ds4_low_battery;
-    bb_ds4_output_build(report,strength,colour,slot->ds4_low_battery,update_blink);
-    bool sent=send_classic_report(classic_hid_cid, 0x11, &report[1], 77) == ERROR_CODE_SUCCESS;
-    if(sent){slot->ds4_lightbar_sent=colour;slot->ds4_lightbar_valid=true;slot->ds4_blink_sent=slot->ds4_low_battery;}
+    bb_ds4_output_build(report,motors.big,motors.small,colour,slot->ds4_low_battery,update_blink);
+    uint8_t status=send_classic_report(classic_hid_cid, 0x11, &report[1], 77);
+    bool sent=status==ERROR_CODE_SUCCESS;slot->ds4_rumble_retry=status==ERROR_CODE_COMMAND_DISALLOWED;
+    if(sent){slot->ds4_motors_sent=motors;slot->ds4_lightbar_sent=colour;slot->ds4_lightbar_valid=true;slot->ds4_blink_sent=slot->ds4_low_battery;}
     return sent;
+}
+
+static bool send_ds4_rumble(uint8_t strength) {
+    return send_ds4_motors((bb_ds4_motors_t){strength,strength});
 }
 
 static void service_ds4_lightbar(uint32_t now) {
@@ -622,7 +631,7 @@ static void service_ds4_lightbar(uint32_t now) {
     if(slot->ds4_lightbar_valid&&slot->ds4_blink_sent==slot->ds4_low_battery&&!memcmp(&colour,&slot->ds4_lightbar_sent,sizeof(colour)))return;
     if((int32_t)(now-slot->ds4_lightbar_retry_at)<0)return;
     slot->ds4_lightbar_retry_at=now+100u;
-    send_ds4_rumble(rumble_active?rumble_active_strength:0);
+    send_ds4_motors(slot->ds4_motors_sent);
 }
 
 // Set when the activation feature report is sent; the first SET_REPORT_RESPONSE after it sends the LED report.
@@ -1010,7 +1019,7 @@ static bool send_xbox_ble_rumble(uint8_t strength) {
     return false;
 }
 
-static bool send_current_rumble(uint8_t strength) {
+static bool send_current_rumble(uint8_t strength,bool stop) {
     switch (current_identity.kind) {
         case BB_CONTROLLER_XBOX_SERIES:
         case BB_CONTROLLER_XBOX_WIRELESS:
@@ -1020,7 +1029,7 @@ static bool send_current_rumble(uint8_t strength) {
         case BB_CONTROLLER_DUALSENSE_EDGE:
             return send_dualsense_rumble(strength);
         case BB_CONTROLLER_DUALSHOCK4:
-            return send_ds4_rumble(strength);
+            return send_ds4_motors(bb_ds4_rumble_motors(strength,rumble_motor_big,rumble_motor_small,stop));
         case BB_CONTROLLER_DUALSHOCK3:
             return send_ds3_rumble(strength);
         case BB_CONTROLLER_NSO_N64:
@@ -1051,25 +1060,27 @@ static void service_rumble(void) {
         rumble_motor_big = rumble_request_big;
         rumble_motor_small = rumble_request_small;
         rumble_request_pending = false;
-        if (send_current_rumble(strength)) {
-            rumble_active = strength != 0;
+        if (send_current_rumble(strength,false)) {
+            rumble_active = strength != 0 || (current_identity.kind==BB_CONTROLLER_DUALSHOCK4&&(rumble_motor_big||rumble_motor_small));
             rumble_active_strength = strength;
             rumble_stop_at = now + duration;
             rumble_refresh_at = now + 80u;
         } else if ((xbox_ble_connected() && xbox_rumble_retry) || (eightbitdo64_ble_connected() && eightbitdo64_rumble_retry) ||
-                   (current_identity.kind == BB_CONTROLLER_DUALSHOCK3 && ds3_rumble_retry)) {
+                   (current_identity.kind == BB_CONTROLLER_DUALSHOCK3 && ds3_rumble_retry) ||
+                   (current_identity.kind == BB_CONTROLLER_DUALSHOCK4 && host_slots[bb_slot_current()].ds4_rumble_retry)) {
             rumble_request_pending = true;
         }
     }
     if (rumble_active && (int32_t)(now - rumble_stop_at) < 0 && (int32_t)(now - rumble_refresh_at) >= 0) {
         bool refresh = current_identity.kind == BB_CONTROLLER_SWITCH2_PRO || (current_identity.kind == BB_CONTROLLER_8BITDO && classic_switch_protocol);
-        if (refresh) send_current_rumble(rumble_active_strength);
+        if (refresh) send_current_rumble(rumble_active_strength,false);
         rumble_refresh_at = now + 80u;
     }
     if (rumble_active && (int32_t)(now - rumble_stop_at) >= 0) {
-        bool stopped = send_current_rumble(0);
+        bool stopped = send_current_rumble(0,true);
         if (!stopped && ((xbox_ble_connected() && xbox_rumble_retry) || (eightbitdo64_ble_connected() && eightbitdo64_rumble_retry) ||
-                         (current_identity.kind == BB_CONTROLLER_DUALSHOCK3 && ds3_rumble_retry))) return;
+                         (current_identity.kind == BB_CONTROLLER_DUALSHOCK3 && ds3_rumble_retry) ||
+                   (current_identity.kind == BB_CONTROLLER_DUALSHOCK4 && host_slots[bb_slot_current()].ds4_rumble_retry))) return;
         rumble_active = false;
         rumble_active_strength = 0;
         rumble_refresh_at = 0;
@@ -1439,6 +1450,8 @@ static void controller_disconnected(bool link_closed) {
     ds4_activation_pending = false;
     ds4_activation_step = 0;
     host_slots[bb_slot_current()].ds4_lightbar_valid=false;
+    host_slots[bb_slot_current()].ds4_rumble_retry=false;
+    host_slots[bb_slot_current()].ds4_motors_sent=(bb_ds4_motors_t){0};
     host_slots[bb_slot_current()].ds4_low_battery=false;
     host_slots[bb_slot_current()].ds4_blink_sent=false;
     host_slots[bb_slot_current()].ds4_lightbar_retry_at=0;
@@ -2944,14 +2957,14 @@ void bb_bt_host_set_output_rumble(uint8_t left, uint8_t right) {
 }
 
 // strength drives single-strength controllers (unchanged behaviour); big/small drive controllers
-// with separate motors (DualShock 3).
+// with separate motors (DualShock 3/4).
 void bb_bt_host_set_slot_rumble_motors(uint8_t slot, uint8_t strength, uint8_t big, uint8_t small) {
     if (slot >= BB_MAX_SLOTS) return;
     bb_host_context_t* context = &host_slots[slot];
     context->queued_strength = strength;
     context->queued_big = big;
     context->queued_small = small;
-    context->queued_duration = strength ? 1200u : 50u;
+    context->queued_duration = (strength||big||small) ? 1200u : 50u;
     context->queued_pending = true;
 }
 

@@ -3,7 +3,7 @@
 #include <stdint.h>
 typedef struct {
     bool touching, have_timestamp;
-    uint8_t contact, timestamp;
+    uint8_t contact, timestamp, click_button;
     int16_t x,y, remainder_x,remainder_y;
     uint32_t at;
 } bb_ds4_pointer_t;

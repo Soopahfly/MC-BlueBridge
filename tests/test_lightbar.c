@@ -27,14 +27,14 @@ int main(void) {
     assert(eq(c.players[0],(bb_rgb_t){0,0,64})&&eq(c.players[1],(bb_rgb_t){64,32,0}));
     c.players[0]=(bb_rgb_t){11,22,33};assert(!bb_lightbar_valid(&c));c.theme=0;assert(bb_lightbar_valid(&c));
     uint8_t p[78];
-    bb_ds4_output_build(p,127,(bb_rgb_t){7,13,19},false,true);
+    bb_ds4_output_build(p,127,127,(bb_rgb_t){7,13,19},false,true);
     assert(p[0]==0x11&&p[1]==0xc4&&p[3]==7&&p[6]==127&&p[7]==127);
     assert(p[8]==7&&p[9]==13&&p[10]==19&&!p[11]&&!p[12]);
     uint32_t crc=(uint32_t)p[74]|((uint32_t)p[75]<<8)|((uint32_t)p[76]<<16)|((uint32_t)p[77]<<24);
     assert(crc==checksum(p));
     /* Stopping rumble must retain RGB, including all-off as a valid colour. */
-    bb_ds4_output_build(p,0,(bb_rgb_t){7,13,19},false,true);assert(!p[6]&&!p[7]&&p[8]==7&&p[10]==19);
-    bb_ds4_output_build(p,200,(bb_rgb_t){0},false,true);assert(p[6]==200&&!p[8]&&!p[9]&&!p[10]);
+    bb_ds4_output_build(p,0,0,(bb_rgb_t){7,13,19},false,true);assert(!p[6]&&!p[7]&&p[8]==7&&p[10]==19);
+    bb_ds4_output_build(p,200,200,(bb_rgb_t){0},false,true);assert(p[6]==200&&!p[8]&&!p[9]&&!p[10]);
     assert(!bb_ds4_low_battery_blink(false,true,20,1));
     assert(bb_ds4_low_battery_blink(false,true,19,1));
     assert(bb_ds4_low_battery_blink(true,true,20,1));
@@ -45,14 +45,27 @@ int main(void) {
     assert(!bb_ds4_low_battery_blink(true,false,0,0));
     assert(!bb_ds4_low_battery_blink(false,true,255,1));
     for(unsigned strength=0;strength<=255;strength+=85) {
-        bb_ds4_output_build(p,(uint8_t)strength,(bb_rgb_t){7,13,19},true,true);
+        bb_ds4_output_build(p,(uint8_t)strength,(uint8_t)strength,(bb_rgb_t){7,13,19},true,true);
         assert(p[6]==strength&&p[7]==strength&&p[8]==7&&p[9]==13&&p[10]==19);
         assert(p[11]==100&&p[12]==100&&(p[3]&4));
         crc=(uint32_t)p[74]|((uint32_t)p[75]<<8)|((uint32_t)p[76]<<16)|((uint32_t)p[77]<<24);
         assert(crc==checksum(p));
     }
-    bb_ds4_output_build(p,255,(bb_rgb_t){7,13,19},true,false);
+    bb_ds4_output_build(p,255,255,(bb_rgb_t){7,13,19},true,false);
     assert(p[3]==3&&p[6]==255&&p[11]==100&&p[12]==100); /* Retain blink phase. */
-    bb_ds4_output_build(p,0,(bb_rgb_t){7,13,19},false,true);assert(!p[11]&&!p[12]&&p[8]==7&&(p[3]&4));
+    bb_ds4_output_build(p,0,0,(bb_rgb_t){7,13,19},false,true);assert(!p[11]&&!p[12]&&p[8]==7&&(p[3]&4));
+    /* Independent motor order: right/small at byte 6, left/big at byte 7. */
+    for(unsigned big=0;big<=255;big++)for(unsigned small=0;small<=255;small+=255) {
+        bb_ds4_motors_t motors=bb_ds4_rumble_motors(80,(uint8_t)big,(uint8_t)small,false);
+        if(big||small)assert(motors.big==big&&motors.small==small);
+        else assert(motors.big==80&&motors.small==80); /* Unknown-effect fallback. */
+        bb_ds4_output_build(p,motors.big,motors.small,(bb_rgb_t){7,13,19},true,false);
+        assert(p[6]==motors.small&&p[7]==motors.big&&p[8]==7&&p[11]==100&&p[3]==3);
+        crc=(uint32_t)p[74]|((uint32_t)p[75]<<8)|((uint32_t)p[76]<<16)|((uint32_t)p[77]<<24);
+        assert(crc==checksum(p));
+        motors=bb_ds4_rumble_motors(80,(uint8_t)big,(uint8_t)small,true);
+        assert(!motors.big&&!motors.small);
+    }
+    bb_ds4_motors_t tiny=bb_ds4_rumble_motors(0,1,0,false);assert(tiny.big==1&&!tiny.small);
     puts("lightbar: themes, slot/preset/override, RGB+rumble+blink encoding, CRC, battery thresholds, hysteresis and charging/unknown suppression passed");
 }

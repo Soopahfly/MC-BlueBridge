@@ -15,6 +15,7 @@ env["PATH"] = str(Path(cc).parent) + os.pathsep + env.get("PATH", "")
 out = root / "build-host"
 out.mkdir(exist_ok=True)
 for name, sources in {
+    "upstream14": ["tests/test_upstream14.c", "src/bluebridge_state.c", "src/config_store.c"],
     "feedback": ["tests/test_feedback.c", "src/hid_feedback.c"],
     "lightbar": ["tests/test_lightbar.c", "src/lightbar.c"],
     "lightbar-state": ["tests/test_lightbar_state.c", "src/bluebridge_state.c", "src/config_store.c"],
@@ -40,3 +41,5 @@ for name, sources in {
     subprocess.run([cc, "-std=c11", *extra, "-Wall", "-Wextra", "-Werror", "-Itests/stubs", "-Isrc",
                     *sources, "-o", str(exe)], cwd=root, env=env, check=True)
     subprocess.run([str(exe)], cwd=root, env=env, check=True)
+
+subprocess.run([os.environ.get("PYTHON", __import__("sys").executable), str(root/"tests/test_ds4_output_service.py")], cwd=root, env=env, check=True)

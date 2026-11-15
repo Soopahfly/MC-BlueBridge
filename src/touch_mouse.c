@@ -12,7 +12,7 @@ bool bb_ds4_pointer_decode(bb_ds4_pointer_t* s,const uint8_t* p,uint16_t len,
     for(unsigned i=0;i<74;i++)crc=crc_byte(crc,p[i]);
     uint32_t received=(uint32_t)p[74]|((uint32_t)p[75]<<8)|((uint32_t)p[76]<<16)|((uint32_t)p[77]<<24);
     if((~crc)!=received)return false;
-    *out=(bb_pointer_sample_t){.buttons=(p[9]&2u)?1:0};
+    *out=(bb_pointer_sample_t){0};
     if((uint32_t)(now-s->at)>500u)memset(s,0,sizeof(*s));
     s->at=now;
     for(unsigned i=0;i<p[35];i++) {
@@ -36,6 +36,13 @@ bool bb_ds4_pointer_decode(bb_ds4_pointer_t* s,const uint8_t* p,uint16_t len,
         } else s->remainder_x=s->remainder_y=0;
         s->touching=true;s->contact=id;s->x=x;s->y=y;
     }
+    /* Choose once at physical press, after processing fresh touch history.
+     * No active contact falls back to left-click. Keep the choice through a
+     * drag, finger lift or side crossing until the physical button is up. */
+    if(p[9]&2u) {
+        if(!s->click_button)s->click_button=s->touching&&s->x>=960?2u:1u;
+        out->buttons=s->click_button;
+    } else s->click_button=0;
     return true;
 }
 static int32_t bounded(int32_t x){return x>32767?32767:x< -32767?-32767:x;}

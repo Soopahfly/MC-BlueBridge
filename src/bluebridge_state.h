@@ -5,7 +5,7 @@
 #include "steam_aim.h"
 #include "lightbar.h"
 
-#define BLUEBRIDGE_VERSION "1.2.0-oled"
+#define BLUEBRIDGE_VERSION "1.2.1-oled"
 #define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=20"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
 #define BB_CONFIG_SCHEMA 20
@@ -152,6 +152,10 @@ bb_rgb_t bb_lightbar_colour(unsigned index,unsigned slot);
 #define BB_CONFIG_V15_SIZE offsetof(bb_config_t, oled_enabled)
 #define BB_CONFIG_V14_SIZE offsetof(bb_config_t, panel_input)
 #define BB_CONFIG_V13_SIZE offsetof(bb_config_t, oled_pew)
+/* Stock upstream v1.2.0 appends mouse/DS4/lightbar directly to schema 13.
+ * Its schema number overlaps our OLED schema 14, but the byte sizes differ. */
+#define BB_CONFIG_UPSTREAM14_SIZE (BB_CONFIG_V13_SIZE+1u+sizeof(bb_steam_aim_t)+sizeof(bb_lightbar_config_t))
+bool bb_config_from_upstream14(const void* data,size_t size,bb_config_t* out);
 #define BB_CONFIG_V12_SIZE offsetof(bb_config_t, blocked_device_count)
 #define BB_CONFIG_V11_SIZE offsetof(bb_config_t, multi_controller)
 bool bb_multi_mode(void);
