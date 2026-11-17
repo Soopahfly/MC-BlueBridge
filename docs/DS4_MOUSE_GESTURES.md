@@ -83,7 +83,7 @@ when a press was already in flight before the release.
 - [x] Schema-14 migration preserves gyro/lightbar, strict validation, saved settings/restart/reset.
 - [x] Actual settings-page simulated serial tests, including save errors and old-firmware fallback.
 - [x] Final Pico 2 W firmware build, preview manifest and actual USB descriptor/wheel audit.
-- [ ] Back up the source branch to the owner's fork; leave upstream PR unopened.
+- [x] Back up source to the owner's fork on contrib/ds4-mouse-gestures (implementation ec83a5f); upstream PR remains unopened.
 - [ ] Hardware: all click modes, right/left drags, crossing/lifting fingers while pressed, and simultaneous buttons.
 - [ ] Hardware: scrolling direction/speed, one/two-finger transitions, scrolling with gyro enabled, contact changes.
 - [ ] Hardware: capture, sleep/reconnect, radio loss and USB backpressure release all buttons correctly.
