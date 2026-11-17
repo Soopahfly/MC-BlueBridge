@@ -8,45 +8,6 @@
 #include <string.h>
 #include <stdio.h>
 
-static uint32_t ds4_pointer_crc_byte(uint32_t crc,uint8_t byte) {
-    crc^=byte;
-    for(unsigned i=0;i<8;i++)crc=(crc>>1)^((crc&1u)?0xedb88320u:0);
-    return crc;
-}
-bool bb_ds4_pointer_decode(bb_ds4_pointer_t* s,const uint8_t* p,uint16_t len,
-                           uint32_t now,bb_pointer_sample_t* out) {
-    if(!p||len!=78||p[0]!=0x11||p[35]>4)return false;
-    uint32_t crc=ds4_pointer_crc_byte(0xffffffffu,0xa1);
-    for(unsigned i=0;i<74;i++)crc=ds4_pointer_crc_byte(crc,p[i]);
-    uint32_t received=(uint32_t)p[74]|((uint32_t)p[75]<<8)|((uint32_t)p[76]<<16)|((uint32_t)p[77]<<24);
-    if((~crc)!=received)return false;
-    *out=(bb_pointer_sample_t){.buttons=(p[9]&2u)?1:0};
-    if((uint32_t)(now-s->at)>500u)memset(s,0,sizeof(*s));
-    s->at=now;
-    for(unsigned i=0;i<p[35];i++) {
-        const uint8_t* record=p+36+9*i;
-        uint8_t timestamp=record[0];
-        if(s->have_timestamp && (int8_t)(timestamp-s->timestamp)<=0)continue;
-        s->have_timestamp=true;s->timestamp=timestamp;
-        const uint8_t* point=record+1;
-        if(point[0]&0x80u)point+=4;
-        int16_t x=(int16_t)(point[1]|((point[2]&15u)<<8));
-        int16_t y=(int16_t)((point[2]>>4)|(point[3]<<4));
-        uint8_t id=point[0]&0x7fu;
-        if((point[0]&0x80u)||x>=1920||y>=942) {
-            s->touching=false;s->remainder_x=s->remainder_y=0;continue;
-        }
-        int dx=x-s->x,dy=y-s->y;
-        if(s->touching && id==s->contact && dx>=-512&&dx<=512&&dy>=-512&&dy<=512) {
-            int rx=dx+s->remainder_x,ry=dy+s->remainder_y;
-            out->x+=(int16_t)(rx/4);out->y+=(int16_t)(ry/4);
-            s->remainder_x=(int16_t)(rx%4);s->remainder_y=(int16_t)(ry%4);
-        } else s->remainder_x=s->remainder_y=0;
-        s->touching=true;s->contact=id;s->x=x;s->y=y;
-    }
-    return true;
-}
-
 static int16_t ds4_gyro_s16(const uint8_t* p) {
     uint16_t v=(uint16_t)(p[0]|((uint16_t)p[1]<<8));
     return (int16_t)(v<=32767u?(int32_t)v:(int32_t)v-65536);
@@ -59,7 +20,7 @@ void bb_ds4_gyro_apply(bb_ds4_gyro_t* s,const uint8_t* p,uint32_t now,
     if(!aim.enabled||!bb_ds4_aim_valid(aim)){memset(s,0,sizeof(*s));return;}
     bool paused=aim.pause_button<32 && (input->buttons&(1u<<aim.pause_button));
     if(aim.pause_button<32)input->buttons&=~(1u<<aim.pause_button);
-    if(paused && aim.pause_button==13)pointer->buttons&=~1u;
+    if(paused && aim.pause_button==13)pointer->buttons&=~3u;
     bool active=!paused && (aim.activation==0 || (aim.activation==1&&touching) ||
         (aim.activation==2&&(input->lt>=128 || (input->buttons&(1u<<6)))));
     if(aim.flags&BB_AIM_TRIGGER_FIRE) {
@@ -1093,11 +1054,15 @@ static bool parse_ds4_common(const uint8_t* p, uint16_t len, uint8_t base, bool 
     }
     if(bb_usb_touch_mouse_enabled()) {
         bb_pointer_sample_t pointer;
-        if(bb_ds4_pointer_decode(&driver_slots[bb_slot_current()].pointer,p,len,
-            to_ms_since_boot(get_absolute_time()),&pointer)) {
+        bb_ds4_mouse_t mouse=bb_ds4_mouse_current();
+        uint32_t raw_buttons=s.buttons;
+        if(bb_ds4_pointer_decode_config(&driver_slots[bb_slot_current()].pointer,p,len,
+            to_ms_since_boot(get_absolute_time()),mouse,&pointer)) {
             bb_ds4_gyro_apply(&driver_slots[bb_slot_current()].ds4_gyro,p,
                 to_ms_since_boot(get_absolute_time()),bb_ds4_aim_current(),
                 driver_slots[bb_slot_current()].pointer.touching,&s,&pointer);
+            bb_ds4_mouse_right_button(mouse,raw_buttons,&s,&pointer);
+            if(driver_slots[bb_slot_current()].pointer.scrolling)pointer.x=pointer.y=0;
             bb_usb_touch_mouse_submit(pointer,false);
             s.buttons&=~(1u<<13); /* Touchpad click belongs to the mouse in this mode. */
         }

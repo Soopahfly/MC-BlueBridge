@@ -332,10 +332,10 @@ Controller support depends on the hardware, controller firmware and Bluetooth mo
 
 Some controller-specific features may not currently be available, including:
 
-- Motion sensors
-- Touchpads
+- Native motion-sensor output and accelerometer tilt mapping (DS4 gyro-to-mouse aiming is available)
+- Touchpad gestures beyond pointer/click and optional vertical scrolling, such as tap-to-click or horizontal scrolling
 - Adaptive triggers
-- Controller-specific lighting
+- Controller-specific lighting outside supported DS4 lightbar controls
 
 Rumble availability also depends on both the connected controller and the selected USB output mode.
 
@@ -368,3 +368,9 @@ MC BlueBridge also uses third-party components including:
 These components remain subject to their own upstream license terms. See `THIRD_PARTY_LICENSES.md` for the Xbox 360 authentication dependency information.
 
 The GPL-3.0 license applies to MC BlueBridge's own project code and does not replace or override the licenses of third-party components.
+
+## Optional DS4 mouse gestures (preview)
+
+This branch adds configurable right-click and two-finger vertical scrolling to
+the existing DS4 mouse. Both default off; hardware validation is pending. See
+[setup, config page and testing checklist](docs/DS4_MOUSE_GESTURES.md).

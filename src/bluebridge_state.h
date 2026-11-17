@@ -3,12 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "ds4_aim.h"
+#include "ds4_mouse.h"
 #include "lightbar.h"
 
-#define BLUEBRIDGE_VERSION "1.2.1"
-#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=14"
+#define BLUEBRIDGE_VERSION "1.2.1-mouse-preview"
+#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=15"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
-#define BB_CONFIG_SCHEMA 14
+#define BB_CONFIG_SCHEMA 15
 #define BB_MAX_NAME 32
 #define BB_MAX_PROFILE_NAME 24
 #define BB_MAX_CONTROLLERS 8
@@ -43,6 +44,9 @@ void bb_touch_mouse_set(bool enabled);
 bb_ds4_aim_t bb_ds4_aim_get(void);
 bb_ds4_aim_t bb_ds4_aim_current(void);
 bool bb_ds4_pointer_settings_set(bb_ds4_aim_t settings,bool mouse);
+bb_ds4_mouse_t bb_ds4_mouse_get(void);
+bb_ds4_mouse_t bb_ds4_mouse_current(void);
+bool bb_ds4_mouse_settings_set(bb_ds4_mouse_t config,bool enabled);
 #define BB_OUTPUT_LAST BB_OUTPUT_DUALSENSE
 
 typedef struct __attribute__((packed)) {
@@ -120,8 +124,10 @@ typedef struct __attribute__((packed)) {
     uint8_t touch_mouse_enabled;
     bb_ds4_aim_t ds4_aim;
     bb_lightbar_config_t lightbar;
+    bb_ds4_mouse_t ds4_mouse;
 } bb_config_t;
 
+#define BB_CONFIG_V14_SIZE offsetof(bb_config_t, ds4_mouse)
 #define BB_CONFIG_V13_SIZE offsetof(bb_config_t, touch_mouse_enabled)
 void bb_lightbar_get(bb_lightbar_config_t* out);
 bool bb_lightbar_palette_set(uint8_t theme,const bb_rgb_t players[4]);

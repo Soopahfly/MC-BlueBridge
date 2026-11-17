@@ -56,6 +56,8 @@ add_executable(mc_bluebridge
   ${LIBXSM3_SOURCE_DIR}/excrypt_des.c
   ${LIBXSM3_SOURCE_DIR}/excrypt_parve.c
   src/xsm3_excrypt_sha.c
+  src/touch_mouse.c
+  src/mouse_queue.c
   src/usb_device.c
   src/usb_descriptors.c
   src/cdc_protocol.c
