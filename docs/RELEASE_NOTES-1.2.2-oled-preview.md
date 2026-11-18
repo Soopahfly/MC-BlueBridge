@@ -42,3 +42,11 @@ and capability checks, invalid values, read failures, dirty edits, save failure
 and switching adapters during a save. Full embedded Python/JavaScript syntax
 checks pass. Both Release builds pass stack-frame checks and UF2 checks.
 Physical left/right-click behaviour remains for the user to confirm.
+
+Live check (18 November 2026): Companion Remote GUI patch was installed and
+its marker verified over HTTP. No-OLED firmware 1.2.2/schema 21 was installed
+with Preserve Configuration. Every pre-existing configuration byte after the
+schema field matches the pre-update export; one zero byte was appended.
+The real API successfully enabled/disabled right-click and rejected a numeric
+value with HTTP 400. Right-click is left OFF. Physical clicks remain for the
+user to verify. Independent DS4 rumble remains included.
