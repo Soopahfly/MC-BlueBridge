@@ -41,7 +41,7 @@ int main(void) {
     memcpy(test_flash+base,header,sizeof(header));memcpy(test_flash+base+sizeof(header),&cfg,BB_CONFIG_V19_SIZE);
     bb_state_init();bb_lightbar_get(&light);
     assert(light.theme==2&&bb_touch_mouse_get()&&bb_ds4_aim_get().sensitivity==145&&bb_steam_aim_get().sensitivity==110);
-    bb_config_get(&cfg);assert(cfg.controller_count==2&&cfg.schema==20);
+    bb_config_get(&cfg);assert(cfg.controller_count==2&&cfg.schema==BB_CONFIG_SCHEMA);
     cfg.lightbar.controllers[0].player=5;assert(!bb_config_import(&cfg,bb_config_checksum(&cfg)));
     cfg.schema=19;assert(bb_config_import(&cfg,bb_config_checksum(&cfg)));
     puts("lightbar state: live settings, IDs, persistence, forget/reuse, no restart, schema-19 migration and import validation passed");

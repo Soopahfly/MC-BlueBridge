@@ -6,7 +6,7 @@ static uint32_t crc_byte(uint32_t crc,uint8_t byte) {
     return crc;
 }
 bool bb_ds4_pointer_decode(bb_ds4_pointer_t* s,const uint8_t* p,uint16_t len,
-                           uint32_t now,bb_pointer_sample_t* out) {
+                           uint32_t now,bool right_click,bb_pointer_sample_t* out) {
     if(!p||len!=78||p[0]!=0x11||p[35]>4)return false;
     uint32_t crc=crc_byte(0xffffffffu,0xa1);
     for(unsigned i=0;i<74;i++)crc=crc_byte(crc,p[i]);
@@ -40,7 +40,7 @@ bool bb_ds4_pointer_decode(bb_ds4_pointer_t* s,const uint8_t* p,uint16_t len,
      * No active contact falls back to left-click. Keep the choice through a
      * drag, finger lift or side crossing until the physical button is up. */
     if(p[9]&2u) {
-        if(!s->click_button)s->click_button=s->touching&&s->x>=960?2u:1u;
+        if(!s->click_button)s->click_button=right_click&&s->touching&&s->x>=960?2u:1u;
         out->buttons=s->click_button;
     } else s->click_button=0;
     return true;

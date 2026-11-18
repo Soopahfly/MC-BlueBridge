@@ -29,7 +29,7 @@ int main(int argc,char** argv){
     memcpy(raw+at,&light,sizeof(light));
     assert(BB_CONFIG_UPSTREAM14_SIZE==11039&&BB_CONFIG_V14_SIZE!=sizeof(raw));
     assert(bb_config_from_upstream14(raw,sizeof(raw),&out));
-    assert(out.schema==20&&!memcmp((uint8_t*)&out+4,raw+4,BB_CONFIG_V13_SIZE-4));
+    assert(out.schema==BB_CONFIG_SCHEMA&&!memcmp((uint8_t*)&out+4,raw+4,BB_CONFIG_V13_SIZE-4));
     assert(out.touch_mouse_enabled==1&&!memcmp(&out.ds4_aim,&aim,sizeof(aim)));
     assert(!memcmp(&out.lightbar,&light,sizeof(light))&&!out.steam_aim.enabled&&out.oled_enabled);
     assert(!out.panel_input);for(unsigned i=0;i<sizeof(out.oled_pew);i++)assert(!((uint8_t*)out.oled_pew)[i]);
@@ -37,7 +37,7 @@ int main(int argc,char** argv){
     uint32_t header[]={0x42424733u,sizeof(raw),hash(raw,sizeof(raw))};
     unsigned base=PICO_FLASH_SIZE_BYTES-16*FLASH_SECTOR_SIZE;
     memcpy(test_flash+base,header,sizeof(header));memcpy(test_flash+base+sizeof(header),raw,sizeof(raw));
-    assert(bb_config_load(&cfg)&&cfg.schema==20&&!memcmp(&cfg,&out,sizeof(cfg)));
+    assert(bb_config_load(&cfg)&&cfg.schema==BB_CONFIG_SCHEMA&&!memcmp(&cfg,&out,sizeof(cfg)));
     bb_state_init();assert(bb_touch_mouse_current()&&bb_ds4_aim_current().sensitivity==134);
     test_flash[base+sizeof(header)+5]^=1;assert(!bb_config_load(&cfg));
     assert(!bb_config_from_upstream14(raw,sizeof(raw)-1,&cfg));

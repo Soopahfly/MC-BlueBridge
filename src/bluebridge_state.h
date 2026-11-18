@@ -5,10 +5,10 @@
 #include "steam_aim.h"
 #include "lightbar.h"
 
-#define BLUEBRIDGE_VERSION "1.2.1-oled"
-#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=20"
+#define BLUEBRIDGE_VERSION "1.2.2-oled"
+#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=21"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
-#define BB_CONFIG_SCHEMA 20
+#define BB_CONFIG_SCHEMA 21
 #define BB_MAX_NAME 32
 #define BB_MAX_PROFILE_NAME 24
 #define BB_MAX_CONTROLLERS 8
@@ -138,8 +138,13 @@ typedef struct __attribute__((packed)) {
     bb_steam_aim_t steam_aim;
     bb_steam_aim_t ds4_aim;
     bb_lightbar_config_t lightbar;
+    uint8_t ds4_right_click;
 } bb_config_t;
 
+#define BB_CONFIG_V20_SIZE offsetof(bb_config_t, ds4_right_click)
+bool bb_ds4_right_click_get(void);
+bool bb_ds4_right_click_current(void);
+void bb_ds4_right_click_set(bool enabled);
 #define BB_CONFIG_V19_SIZE offsetof(bb_config_t, lightbar)
 void bb_lightbar_get(bb_lightbar_config_t* out);
 bool bb_lightbar_palette_set(uint8_t theme,const bb_rgb_t players[4]);

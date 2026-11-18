@@ -13,6 +13,7 @@ static bool boot_multi;
 static bb_panel_input_t boot_panel_input;
 static bool boot_oled_enabled;
 static bool boot_touch_mouse;
+static volatile bool live_ds4_right_click;
 static bb_steam_aim_t boot_steam_aim;
 static bb_steam_aim_t boot_ds4_aim;
 static volatile bool mode_restart;
@@ -76,6 +77,16 @@ bb_rgb_t bb_lightbar_colour(unsigned index,unsigned slot) {
 }
 
 bb_steam_aim_t bb_steam_aim_current(void){return boot_steam_aim;}
+bool bb_ds4_right_click_current(void){return live_ds4_right_click;}
+bool bb_ds4_right_click_get(void){
+    critical_section_enter_blocking(&lock);bool enabled=config_state.ds4_right_click!=0;
+    critical_section_exit(&lock);return enabled;
+}
+void bb_ds4_right_click_set(bool enabled){
+    critical_section_enter_blocking(&lock);
+    if(config_state.ds4_right_click!=(uint8_t)enabled){config_state.ds4_right_click=enabled;request_save_locked();}
+    live_ds4_right_click=enabled;critical_section_exit(&lock);
+}
 bb_steam_aim_t bb_ds4_aim_current(void){return boot_ds4_aim;}
 bb_steam_aim_t bb_ds4_aim_get(void){
     critical_section_enter_blocking(&lock);bb_steam_aim_t a=config_state.ds4_aim;
@@ -288,13 +299,14 @@ void bb_state_init(void) {
     }
     if (!bb_config_load(&config_state)) {
         init_defaults(&config_state);
-    } else if (config_state.schema >= 8 && config_state.schema <= 19) {
+    } else if (config_state.schema >= 8 && config_state.schema <= 20) {
         if(config_state.schema<15)config_state.panel_input=BB_PANEL_ENCODER;
         if(config_state.schema<16)config_state.oled_enabled=1;
         if(config_state.schema<17)config_state.touch_mouse_enabled=0;
         if(config_state.schema<18)config_state.steam_aim=bb_steam_aim_defaults();
         if(config_state.schema<19)config_state.ds4_aim=bb_ds4_aim_defaults();
-        config_state.lightbar=bb_lightbar_defaults();
+        if(config_state.schema<20)config_state.lightbar=bb_lightbar_defaults();
+        config_state.ds4_right_click=0;
         config_state.schema = BB_CONFIG_SCHEMA;
         if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_LAST) config_state.output_mode = BB_OUTPUT_MISTER;
         request_save_locked();
@@ -309,6 +321,8 @@ void bb_state_init(void) {
     if(!bb_ds4_aim_valid(config_state.ds4_aim)){config_state.ds4_aim=bb_ds4_aim_defaults();request_save_locked();}
     boot_ds4_aim=config_state.ds4_aim;
     if(!bb_lightbar_valid(&config_state.lightbar)){config_state.lightbar=bb_lightbar_defaults();request_save_locked();}
+    if(config_state.ds4_right_click>1){config_state.ds4_right_click=0;request_save_locked();}
+    live_ds4_right_click=config_state.ds4_right_click!=0;
     boot_touch_mouse=config_state.touch_mouse_enabled==1;
     if(config_state.touch_mouse_enabled>1){config_state.touch_mouse_enabled=0;request_save_locked();}
     boot_multi = config_state.multi_controller == 1;
@@ -645,6 +659,7 @@ uint8_t bb_output_mode_value(void) {
 void bb_config_set(const bb_config_t* cfg, bool persist) {
     critical_section_enter_blocking(&lock);
     config_state = *cfg;
+    live_ds4_right_click=config_state.ds4_right_click==1;
     if (persist) request_save_locked();
     else ++config_revision;
     critical_section_exit(&lock);
@@ -1315,6 +1330,8 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     if(cfg->schema<18)value.steam_aim=bb_steam_aim_defaults();
     if(cfg->schema<19)value.ds4_aim=bb_ds4_aim_defaults();
     if(cfg->schema<20)value.lightbar=bb_lightbar_defaults();
+    if(cfg->schema<21)value.ds4_right_click=0;
+    if(value.ds4_right_click>1)return false;
     if(!bb_lightbar_valid(&value.lightbar))return false;
     if(!bb_ds4_aim_valid(value.ds4_aim))return false;
     if(!bb_steam_aim_valid(value.steam_aim))return false;

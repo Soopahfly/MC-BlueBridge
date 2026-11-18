@@ -58,6 +58,10 @@ configuration stays on schema 20. See [release notes and validation](docs/RELEAS
 motors while retaining colours and battery blink. Both variants retain schema
 20. See [usage and validation](docs/RELEASE_NOTES-1.2.1-oled-preview.md).
 
+**1.2.2 preview** makes DS4 right-click a saved, default-off option in the
+BlueBridge web GUI. Both builds migrate schema 20 settings without changing
+existing preferences. See [setup and validation](docs/RELEASE_NOTES-1.2.2-oled-preview.md).
+
 ### Screenshots and demonstrations
 
 The images below are simulated frames from the firmware renderer, not hardware

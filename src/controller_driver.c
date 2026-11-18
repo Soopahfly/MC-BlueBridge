@@ -997,7 +997,7 @@ static bool parse_ds4_common(const uint8_t* p, uint16_t len, uint8_t base, bool 
     if(bb_usb_touch_mouse_enabled()) {
         bb_pointer_sample_t pointer;
         if(bb_ds4_pointer_decode(&driver_slots[bb_slot_current()].pointer,p,len,
-            to_ms_since_boot(get_absolute_time()),&pointer)) {
+            to_ms_since_boot(get_absolute_time()),bb_ds4_right_click_current(),&pointer)) {
             bb_ds4_gyro_apply(&driver_slots[bb_slot_current()].ds4_gyro,p,
                 to_ms_since_boot(get_absolute_time()),bb_ds4_aim_current(),
                 driver_slots[bb_slot_current()].pointer.touching,&s,&pointer);

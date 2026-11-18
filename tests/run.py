@@ -15,6 +15,7 @@ env["PATH"] = str(Path(cc).parent) + os.pathsep + env.get("PATH", "")
 out = root / "build-host"
 out.mkdir(exist_ok=True)
 for name, sources in {
+    "right-click-setting": ["tests/test_right_click_setting.c", "src/bluebridge_state.c", "src/config_store.c"],
     "upstream14": ["tests/test_upstream14.c", "src/bluebridge_state.c", "src/config_store.c"],
     "feedback": ["tests/test_feedback.c", "src/hid_feedback.c"],
     "lightbar": ["tests/test_lightbar.c", "src/lightbar.c"],
