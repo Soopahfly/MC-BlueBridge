@@ -28,7 +28,7 @@ int main(void){
     memcpy(test_flash+base,header,sizeof(header));
     memcpy(test_flash+base+sizeof(header),&before,BB_CONFIG_V20_SIZE);
     bb_state_init();bb_config_get(&after);
-    assert(after.schema==21&&BB_CONFIG_V20_SIZE==11110&&sizeof(after)==11111);
+    assert(after.schema==BB_CONFIG_SCHEMA&&BB_CONFIG_V20_SIZE==11110&&BB_CONFIG_V21_SIZE==11111&&sizeof(after)==11115);
     assert(!memcmp((uint8_t*)&before+4,(uint8_t*)&after+4,BB_CONFIG_V20_SIZE-4));
     assert(!bb_ds4_right_click_get()&&!bb_ds4_right_click_current());
     bb_ds4_right_click_set(true);assert(bb_ds4_right_click_get()&&bb_ds4_right_click_current());
@@ -39,5 +39,21 @@ int main(void){
     after.ds4_right_click=0;assert(bb_config_import(&after,bb_config_checksum(&after)));
     assert(!bb_ds4_right_click_current());
     bb_ds4_right_click_set(true);assert(bb_config_reset()&&!bb_ds4_right_click_current());
+    /* A real schema-21 flash prefix preserves DS4 options and initializes Steam. */
+    bb_config_get(&before);before.schema=21;before.ds4_right_click=1;
+    header[1]=BB_CONFIG_V21_SIZE;header[2]=hash(&before,header[1]);
+    memcpy(test_flash+base,header,sizeof(header));memcpy(test_flash+base+sizeof(header),&before,header[1]);
+    bb_state_init();bb_config_get(&after);
+    assert(!memcmp((uint8_t*)&before+4,(uint8_t*)&after+4,BB_CONFIG_V21_SIZE-4));
+    bb_steam_features_t f=bb_steam_features_get();
+    assert(!f.right_click&&!f.haptics&&f.haptic_gain==50&&f.led_brightness==100);
+    bool restart_before=bb_mode_restart_pending();
+    assert(bb_steam_features_set((bb_steam_features_t){1,1,80,25}));
+    assert(!bb_steam_features_set((bb_steam_features_t){1,1,101,25}));
+    assert(bb_mode_restart_pending()==restart_before);test_time+=250;bb_config_flush_pending();bb_state_init();
+    f=bb_steam_features_get();assert(f.right_click&&f.haptics&&f.haptic_gain==80&&f.led_brightness==25);
+    bb_config_get(&after);after.steam_features.led_brightness=101;
+    assert(!bb_config_import(&after,bb_config_checksum(&after)));
+    assert(bb_config_reset());f=bb_steam_features_get();assert(!f.haptics&&!f.right_click&&f.led_brightness==100);
     puts("right-click setting: default off, schema-20 prefix preserved, live save, persistence, import validation and reset passed");
 }

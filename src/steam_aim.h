@@ -5,6 +5,16 @@
 typedef struct __attribute__((packed)) {
     uint8_t enabled, sensitivity, activation, flags, pause_button;
 } bb_steam_aim_t;
+/* Live settings, independent of the boot-applied gyro configuration. */
+typedef struct __attribute__((packed)) {
+    uint8_t right_click, haptics, haptic_gain, led_brightness;
+} bb_steam_features_t;
+static inline bb_steam_features_t bb_steam_features_defaults(void) {
+    return (bb_steam_features_t){0,0,50,100};
+}
+static inline bool bb_steam_features_valid(bb_steam_features_t f) {
+    return f.right_click<=1 && f.haptics<=1 && f.haptic_gain<=100 && f.led_brightness<=100;
+}
 #define BB_AIM_INVERT_X 1u
 #define BB_AIM_INVERT_Y 2u
 #define BB_AIM_TRIGGER_FIRE 4u

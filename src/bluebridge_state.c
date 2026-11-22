@@ -76,6 +76,17 @@ bb_rgb_t bb_lightbar_colour(unsigned index,unsigned slot) {
     critical_section_exit(&lock);return value;
 }
 
+bb_steam_features_t bb_steam_features_get(void) {
+    critical_section_enter_blocking(&lock);
+    bb_steam_features_t f=config_state.steam_features;
+    critical_section_exit(&lock);return f;
+}
+bool bb_steam_features_set(bb_steam_features_t f) {
+    if(!bb_steam_features_valid(f))return false;
+    critical_section_enter_blocking(&lock);
+    if(memcmp(&f,&config_state.steam_features,sizeof(f))){config_state.steam_features=f;request_save_locked();}
+    critical_section_exit(&lock);return true;
+}
 bb_steam_aim_t bb_steam_aim_current(void){return boot_steam_aim;}
 bool bb_ds4_right_click_current(void){return live_ds4_right_click;}
 bool bb_ds4_right_click_get(void){
@@ -251,6 +262,7 @@ static void init_defaults(bb_config_t* cfg) {
     cfg->schema = BB_CONFIG_SCHEMA;
     cfg->oled_enabled=1;
     cfg->steam_aim=bb_steam_aim_defaults();
+    cfg->steam_features=bb_steam_features_defaults();
     cfg->ds4_aim=bb_ds4_aim_defaults();
     cfg->lightbar=bb_lightbar_defaults();
     cfg->output_mode = BB_OUTPUT_MISTER;
@@ -299,14 +311,15 @@ void bb_state_init(void) {
     }
     if (!bb_config_load(&config_state)) {
         init_defaults(&config_state);
-    } else if (config_state.schema >= 8 && config_state.schema <= 20) {
+    } else if (config_state.schema >= 8 && config_state.schema <= 21) {
         if(config_state.schema<15)config_state.panel_input=BB_PANEL_ENCODER;
         if(config_state.schema<16)config_state.oled_enabled=1;
         if(config_state.schema<17)config_state.touch_mouse_enabled=0;
         if(config_state.schema<18)config_state.steam_aim=bb_steam_aim_defaults();
         if(config_state.schema<19)config_state.ds4_aim=bb_ds4_aim_defaults();
         if(config_state.schema<20)config_state.lightbar=bb_lightbar_defaults();
-        config_state.ds4_right_click=0;
+        if(config_state.schema<21)config_state.ds4_right_click=0;
+        config_state.steam_features=bb_steam_features_defaults();
         config_state.schema = BB_CONFIG_SCHEMA;
         if (config_state.output_mode < BB_OUTPUT_MISTER || config_state.output_mode > BB_OUTPUT_LAST) config_state.output_mode = BB_OUTPUT_MISTER;
         request_save_locked();
@@ -318,6 +331,7 @@ void bb_state_init(void) {
     }
     if(!bb_steam_aim_valid(config_state.steam_aim)){config_state.steam_aim=bb_steam_aim_defaults();request_save_locked();}
     boot_steam_aim=config_state.steam_aim;
+    if(!bb_steam_features_valid(config_state.steam_features)){config_state.steam_features=bb_steam_features_defaults();request_save_locked();}
     if(!bb_ds4_aim_valid(config_state.ds4_aim)){config_state.ds4_aim=bb_ds4_aim_defaults();request_save_locked();}
     boot_ds4_aim=config_state.ds4_aim;
     if(!bb_lightbar_valid(&config_state.lightbar)){config_state.lightbar=bb_lightbar_defaults();request_save_locked();}
@@ -1331,6 +1345,8 @@ bool bb_config_import(const bb_config_t* cfg, uint32_t checksum) {
     if(cfg->schema<19)value.ds4_aim=bb_ds4_aim_defaults();
     if(cfg->schema<20)value.lightbar=bb_lightbar_defaults();
     if(cfg->schema<21)value.ds4_right_click=0;
+    if(cfg->schema<22)value.steam_features=bb_steam_features_defaults();
+    if(!bb_steam_features_valid(value.steam_features))return false;
     if(value.ds4_right_click>1)return false;
     if(!bb_lightbar_valid(&value.lightbar))return false;
     if(!bb_ds4_aim_valid(value.ds4_aim))return false;

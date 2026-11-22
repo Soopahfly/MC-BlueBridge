@@ -95,6 +95,7 @@ static uint32_t checksum_bytes(const void* data, size_t size) {
 static void migrate_v7(const legacy_config_v7_t* old, bb_config_t* cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->schema = BB_CONFIG_SCHEMA;
+    cfg->steam_features=bb_steam_features_defaults();
     cfg->panel_input=BB_PANEL_ENCODER;
     cfg->oled_enabled=1;
     cfg->output_mode = old->output_mode;
@@ -162,6 +163,11 @@ bool bb_config_load(bb_config_t* cfg) {
         if (header->checksum != checksum_bytes(stored, sizeof(*stored))) return false;
         *cfg = *stored;
         return true;
+    }
+    if(header->size==BB_CONFIG_V21_SIZE){
+        uint32_t schema;memcpy(&schema,payload,sizeof(schema));
+        if(schema!=21||header->checksum!=checksum_bytes(payload,header->size))return false;
+        memset(cfg,0,sizeof(*cfg));memcpy(cfg,payload,header->size);return true;
     }
     if(header->size==BB_CONFIG_V20_SIZE){
         uint32_t schema;memcpy(&schema,payload,sizeof(schema));

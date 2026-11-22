@@ -1817,6 +1817,7 @@ int bb_driver_handle_steam_ble_report(const uint8_t* report,uint16_t length) {
     bool mouse=bb_usb_touch_mouse_enabled();
     bb_input_state_t input;bb_pointer_sample_t pointer;
     driver_slots[bb_slot_current()].steam.aim=bb_steam_aim_current();
+    driver_slots[bb_slot_current()].steam.features=bb_steam_features_get();
     int result=bb_steam_controller_decode(&driver_slots[bb_slot_current()].steam,report,length,
         to_ms_since_boot(get_absolute_time()),mouse,&input,&pointer);
     if(result==1) {

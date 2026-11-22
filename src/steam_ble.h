@@ -17,11 +17,18 @@ typedef struct bb_steam_ble {
     bb_steam_stage_t stage,failed_stage;
     bool waiting,listening;
     uint8_t configure[15];
+    /* Owned until QUERY_COMPLETE: BTstack may retain the write buffer. */
+    uint8_t output[11],desired[3],sent[3],pending,output_kind,output_value,cursor;
+    uint8_t output_status;
+    bool output_failed;
+    uint32_t output_at,output_queued_at,output_retry_at,output_writes,output_errors;
 } bb_steam_ble_t;
 
 extern const uint8_t bb_steam_service_uuid[16];
 void bb_steam_ble_start(bb_steam_ble_t* client,uint8_t slot,hci_con_handle_t handle,
     uint32_t now,bool gyro,bb_steam_callback_t callback);
 void bb_steam_ble_poll(bb_steam_ble_t* client,uint32_t now);
+bool bb_steam_ble_haptics(bb_steam_ble_t* client,uint8_t left,uint8_t right);
+bool bb_steam_ble_led(bb_steam_ble_t* client,uint8_t brightness);
 void bb_steam_ble_stop(bb_steam_ble_t* client);
 const char* bb_steam_ble_stage_name(bb_steam_stage_t stage);

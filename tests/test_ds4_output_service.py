@@ -29,6 +29,7 @@ prefix = r'''
 #define ERROR_CODE_SUCCESS 0
 #define ERROR_CODE_COMMAND_DISALLOWED 12
 typedef struct {
+    unsigned steam_client;
     bool ds4_lightbar_valid,ds4_rumble_retry,ds4_low_battery,ds4_blink_sent;
     bb_ds4_motors_t ds4_motors_sent;
     bb_rgb_t ds4_lightbar_sent;
@@ -62,6 +63,13 @@ static uint8_t send_classic_report(uint16_t cid,uint16_t id,const uint8_t* data,
 static bool xbox_ble_connected(void){return false;}
 static bool eightbitdo64_ble_connected(void){return false;}
 #define OTHER(name) static bool name(uint8_t strength){(void)strength;assert(0);return false;}
+static bb_steam_features_t features={0,1,50,100};
+static unsigned steam_writes;
+static uint8_t steam_left,steam_right;
+bb_steam_features_t bb_steam_features_get(void){return features;}
+static bool bb_steam_ble_haptics(unsigned* c,uint8_t left,uint8_t right){
+    (void)c;steam_left=left;steam_right=right;++steam_writes;return true;
+}
 OTHER(send_xbox_ble_rumble)
 OTHER(send_dualsense_rumble)
 OTHER(send_ds3_rumble)
@@ -104,6 +112,15 @@ int main(void){
     /* Colour-only output in another slot cannot inherit slot 0 motors. */
     selected_slot=1;now=700;service_ds4_lightbar(now);
     assert(!last[6]&&!last[7]&&host_slots[0].ds4_motors_sent.big==120);
+    current_identity.kind=BB_CONTROLLER_STEAM;now=1000;
+    request(70,200,60,200);service_rumble();assert(steam_left==100&&steam_right==30&&rumble_active);
+    unsigned steam_before=steam_writes;now=1080;service_rumble();assert(steam_writes==steam_before+1);
+    now=1200;service_rumble();assert(!rumble_active&&!steam_left&&!steam_right);
+    request(0,1,0,200);features.haptic_gain=100;service_rumble();assert(rumble_active&&steam_left==1&&!steam_right);
+    features.haptics=0;now=1280;service_rumble();assert(!steam_left&&!steam_right);
+    features.haptics=1;request(80,0,0,100);service_rumble();assert(steam_left==80&&steam_right==80);
+    selected_slot=0;request(0,0,0,50);service_rumble();assert(!steam_left&&!steam_right);
+    puts("Steam host output: separate channels, gain, finite-pulse refresh, tiny effects, disabled stop and fallback passed");
     puts("DS4 output service: routing, separate motors, fallback, busy start/stop, tiny effects, colours, blink and slot caches passed");
 }
 '''
@@ -112,7 +129,7 @@ out.mkdir(exist_ok=True)
 unit = out/'ds4-output-service.c'
 unit.write_text(prefix + '\n'.join(function(n) for n in [
     'send_ds4_motors', 'send_ds4_rumble', 'service_ds4_lightbar',
-    'send_current_rumble', 'service_rumble']) + main, encoding='utf-8')
+    'send_steam_rumble', 'send_current_rumble', 'service_rumble']) + main, encoding='utf-8')
 exe = out/('ds4-output-service.exe' if os.name == 'nt' else 'ds4-output-service')
 subprocess.run([os.environ.get('CC', 'gcc'), '-std=c11', '-Wall', '-Wextra', '-Werror',
                 '-I'+str(root/'src'), str(unit), str(root/'src/lightbar.c'), '-o', str(exe)], check=True)

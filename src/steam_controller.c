@@ -6,6 +6,8 @@ static int16_t signed16(const uint8_t* p) {
     return (int16_t)(v<=32767u?(int32_t)v:(int32_t)v-65536);
 }
 static int16_t invert(int16_t v){return v==(-32767-1)?32767:(int16_t)-v;}
+static int16_t bounded(int32_t v){return (int16_t)(v>32767?32767:v< -32767?-32767:v);}
+static int32_t abs32(int32_t v){return v<0?-v:v;}
 static int invalid(bb_steam_controller_t* s){s->next_segment=0;++s->malformed;return -1;}
 
 static int decode_payload(bb_steam_controller_t* s,unsigned size,uint32_t now,bool mouse,
@@ -55,6 +57,10 @@ static int decode_payload(bb_steam_controller_t* s,unsigned size,uint32_t now,bo
         s->pointer_down=false;s->remainder_x=s->remainder_y=0;
     } else {
         pointer->buttons=(c.buttons&0x40000u)?1:0;
+        if(s->features.right_click) {
+            if(c.buttons&0x20000u)pointer->buttons|=2;
+            input->buttons&=~(1u<<13); /* Optional left pad press is right mouse. */
+        }
         input->buttons&=~(1u<<11); /* Right pad press is left mouse, not R3. */
         if(!touching||!was_touch||(uint32_t)(now-s->pointer_at)>500u) {
             s->pointer_down=false;s->remainder_x=s->remainder_y=0;
@@ -75,30 +81,48 @@ static int decode_payload(bb_steam_controller_t* s,unsigned size,uint32_t now,bo
     if(aiming) {
         bool paused=aim.pause_button<32 && (canonical_buttons&(1u<<aim.pause_button));
         if(aim.pause_button<32)input->buttons&=~(1u<<aim.pause_button);
+        if(paused && aim.pause_button==11)pointer->buttons&=~1u;
+        if(paused && aim.pause_button==13)pointer->buttons&=~2u;
         bool active=!paused && (aim.activation==0 || (aim.activation==1&&touching) ||
             (aim.activation==2&&((c.buttons&2u)||c.lt>=128)));
         if(aim.flags&BB_AIM_TRIGGER_FIRE) {
-            if((c.buttons&1u)||c.rt>=128)pointer->buttons|=1;
+            if(!paused && ((c.buttons&1u)||c.rt>=128))pointer->buttons|=1;
             input->buttons&=~(1u<<7);input->rt=0; /* Avoid duplicate gamepad fire. */
         }
         if(!active){s->gyro_active=false;s->gyro_remainder_x=s->gyro_remainder_y=0;}
         if(flags&0x800u) {
             uint32_t dt=now-s->gyro_at;
+            /* Only fresh gyro fields count towards resting-bias calibration. */
+            if(paused) {
+                if(dt>50u || !s->collecting || abs32(yaw-s->first_x)>16 || abs32(pitch-s->first_y)>16) {
+                    s->collecting=true;s->zero_at=now;s->zero_samples=0;
+                    s->zero_x=s->zero_y=0;s->first_x=(int16_t)yaw;s->first_y=(int16_t)pitch;
+                }
+                if(s->zero_samples<1024) {
+                    s->zero_x+=yaw;s->zero_y+=pitch;++s->zero_samples;
+                    if(s->zero_samples>=32 && (uint32_t)(now-s->zero_at)>=500u) {
+                        s->bias_x=(int16_t)(s->zero_x/s->zero_samples);
+                        s->bias_y=(int16_t)(s->zero_y/s->zero_samples);
+                    }
+                }
+            } else s->collecting=false;
             if(active && s->gyro_active && dt<=50u) {
+                yaw-=s->bias_x;pitch-=s->bias_y;
                 /* Raw +/-2000 degrees/s, 10 mouse counts/degree at 100%.
                  * No catch-up after a radio gap and no stale delta integration. */
                 if(yaw>=-8&&yaw<=8)yaw=0;
                 if(pitch>=-8&&pitch<=8)pitch=0;
                 if(aim.flags&BB_AIM_INVERT_X)yaw=-yaw;
                 if(aim.flags&BB_AIM_INVERT_Y)pitch=-pitch;
-                int32_t x=yaw*(int32_t)dt*aim.sensitivity+s->gyro_remainder_x;
-                int32_t y=-pitch*(int32_t)dt*aim.sensitivity+s->gyro_remainder_y;
-                pointer->x+=(int16_t)(x/163840);pointer->y+=(int16_t)(y/163840);
+                int64_t x=(int64_t)yaw*dt*aim.sensitivity+s->gyro_remainder_x;
+                int64_t y=-(int64_t)pitch*dt*aim.sensitivity+s->gyro_remainder_y;
+                pointer->x=bounded((int32_t)pointer->x+(int32_t)(x/163840));
+                pointer->y=bounded((int32_t)pointer->y+(int32_t)(y/163840));
                 s->gyro_remainder_x=x%163840;s->gyro_remainder_y=y%163840;
             } else s->gyro_remainder_x=s->gyro_remainder_y=0;
             s->gyro_at=now;s->gyro_active=active;
         }
-    } else {s->gyro_active=false;s->gyro_remainder_x=s->gyro_remainder_y=0;}
+    } else {s->collecting=false;s->gyro_active=false;s->gyro_remainder_x=s->gyro_remainder_y=0;}
     ++s->reports;return 1;
 }
 

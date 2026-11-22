@@ -34,10 +34,69 @@ void bb_steam_ble_start(bb_steam_ble_t* c,uint8_t slot,hci_con_handle_t handle,u
     c->slot=slot;c->handle=handle;c->callback=callback;c->started_at=c->step_at=c->next_action_at=now;
     memcpy(c->configure,configure_pads,sizeof(configure_pads));
     c->configure[4]=gyro?0x10:0; /* IMU mode: raw angular velocity only. */
+    c->desired[2]=100;c->sent[2]=255;c->pending=4;
     c->stage=BB_STEAM_SERVICE;clients[slot]=c;
     bb_steam_ble_poll(c,now);
 }
+static void output_fail(bb_steam_ble_t* c,uint8_t status) {
+    c->output_failed=true;c->output_status=status;++c->output_errors;
+    c->pending=0; /* Optional feedback failure must never tear down input. */
+}
+static void queue_output(bb_steam_ble_t* c,unsigned kind,uint8_t value) {
+    if(!c->pending)c->output_queued_at=btstack_run_loop_get_time_ms();
+    c->desired[kind]=value;c->pending|=(uint8_t)(1u<<kind);
+}
+bool bb_steam_ble_haptics(bb_steam_ble_t* c,uint8_t left,uint8_t right) {
+    if(c->stage!=BB_STEAM_READY||c->output_failed)return false;
+    /* Repeated nonzero requests renew a finite pulse train; zero is deduplicated. */
+    if(left||c->desired[0]||c->sent[0])queue_output(c,0,left);
+    if(right||c->desired[1]||c->sent[1])queue_output(c,1,right);
+    return true;
+}
+bool bb_steam_ble_led(bb_steam_ble_t* c,uint8_t brightness) {
+    if(c->stage!=BB_STEAM_READY||c->output_failed||brightness>100)return false;
+    if(c->desired[2]!=brightness||c->sent[2]!=brightness)queue_output(c,2,brightness);
+    return true;
+}
+static void poll_output(bb_steam_ble_t* c,uint32_t now) {
+    if(c->output_failed)return;
+    if(c->waiting) {
+        if((uint32_t)(now-c->output_at)>=3000u)output_fail(c,ERROR_CODE_CONNECTION_TIMEOUT);
+        /* On timeout retain buffer and waiting flag until completion/disconnect. */
+        return;
+    }
+    if(!c->pending)return;
+    if((uint32_t)(now-c->output_queued_at)>=3000u){output_fail(c,ERROR_CODE_CONNECTION_TIMEOUT);return;}
+    if((int32_t)(now-c->output_retry_at)<0)return;
+    unsigned kind=3;
+    for(unsigned i=0;i<2;i++)if((c->pending&(1u<<i))&&!c->desired[i]){kind=i;break;}
+    if(kind==3)for(unsigned i=0;i<3;i++) {
+        unsigned k=(c->cursor+i)%3u;if(c->pending&(1u<<k)){kind=k;break;}
+    }
+    if(kind==3)return;
+    uint8_t value=c->desired[kind],length;
+    memset(c->output,0,sizeof(c->output));c->output[0]=0xc0;
+    if(kind==2) {
+        /* SET_SETTINGS: white Steam-logo LED user brightness (0..100). */
+        c->output[1]=0x87;c->output[2]=3;c->output[3]=0x2d;c->output[4]=value;length=6;
+    } else {
+        /* Original-controller pulse command: duration/interval in microseconds,
+         * count finite, gain 0 dB. Legacy wire pad numbers are left=1/right=0. */
+        uint16_t duration=(uint16_t)((unsigned)value*500u/255u);
+        c->output[1]=0x8f;c->output[2]=8;c->output[3]=(uint8_t)(kind^1u);
+        c->output[4]=(uint8_t)duration;c->output[5]=(uint8_t)(duration>>8);
+        c->output[6]=0xa0;c->output[7]=0x0f;c->output[8]=value?25:0;length=11;
+    }
+    uint8_t status=gatt_client_write_value_of_characteristic(event_handler,c->handle,c->feature.value_handle,length,c->output);
+    if(status==ERROR_CODE_SUCCESS) {
+        c->pending&=(uint8_t)~(1u<<kind);c->waiting=true;c->output_at=now;
+        c->output_kind=(uint8_t)kind;c->output_value=value;c->cursor=(uint8_t)((kind+1u)%3u);
+        if(c->pending)c->output_queued_at=now;
+    } else if(status==GATT_CLIENT_IN_WRONG_STATE||status==BTSTACK_MEMORY_ALLOC_FAILED)c->output_retry_at=now+10u;
+    else output_fail(c,status);
+}
 void bb_steam_ble_poll(bb_steam_ble_t* c,uint32_t now) {
+    if(c->stage==BB_STEAM_READY){poll_output(c,now);return;}
     if(c->stage==BB_STEAM_IDLE||c->stage>=BB_STEAM_READY)return;
     if((uint32_t)(now-c->started_at)>=10000u||(uint32_t)(now-c->step_at)>=3000u){fail(c,ERROR_CODE_CONNECTION_TIMEOUT);return;}
     if(c->waiting||(int32_t)(now-c->next_action_at)<0)return;
@@ -99,6 +158,12 @@ static void event_handler(uint8_t type,uint16_t channel,uint8_t* p,uint16_t size
     }
     if(p[0]!=GATT_EVENT_QUERY_COMPLETE||size<9)return;
     uint8_t status=gatt_event_query_complete_get_att_status(p);
+    if(c->stage==BB_STEAM_READY) {
+        c->waiting=false;
+        if(status)output_fail(c,status);
+        else {c->sent[c->output_kind]=c->output_value;++c->output_writes;}
+        return;
+    }
     if(status){fail(c,status);return;}
     if((c->stage==BB_STEAM_SERVICE&&!c->service.start_group_handle)||
        (c->stage==BB_STEAM_CHARACTERISTICS&&(!c->input.value_handle||!c->feature.value_handle||
@@ -108,6 +173,9 @@ static void event_handler(uint8_t type,uint16_t channel,uint8_t* p,uint16_t size
     c->waiting=false;c->stage=(bb_steam_stage_t)(c->stage+1);c->step_at=btstack_run_loop_get_time_ms();
     /* Allow controller-side clear processing without sleeping in the BT loop. */
     c->next_action_at=c->step_at+(c->stage==BB_STEAM_CONFIG?3u:0u);
-    if(c->stage==BB_STEAM_READY){if(c->callback)c->callback(c,BB_STEAM_EVENT_READY,0,NULL,0);}
+    if(c->stage==BB_STEAM_READY){
+        c->output_queued_at=c->output_retry_at=c->step_at;
+        if(c->callback)c->callback(c,BB_STEAM_EVENT_READY,0,NULL,0);
+    }
     else bb_steam_ble_poll(c,c->step_at);
 }

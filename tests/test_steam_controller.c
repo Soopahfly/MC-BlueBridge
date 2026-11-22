@@ -84,6 +84,33 @@ int main(void) {
     int total=0;for(unsigned i=1;i<=20;i++){assert(send(&gyro,p,n,4+i*10,true,&input,&pointer)==1);total+=pointer.x;}
     assert(total==12); /* Fractional movement accumulates without truncation loss. */
     puts("Steam gyro: sensitivity, inversion, activation, pause/rebase, trigger fire, stale gaps, mode gate, fractions and wrap passed");
+    /* Optional left-pad right click consumes only its own gamepad button. */
+    s.aim.enabled=0;s.features=bb_steam_features_defaults();n=frame(p,0x10,0x20000|0x40000);
+    assert(send(&s,p,n,500,true,&input,&pointer)==1&&pointer.buttons==1&&(input.buttons&(1u<<13)));
+    s.features.right_click=1;
+    assert(send(&s,p,n,510,true,&input,&pointer)==1&&pointer.buttons==3&&!(input.buttons&(1u<<13)));
+    assert(send(&s,p,n,520,false,&input,&pointer)==1&&!pointer.buttons&&(input.buttons&(1u<<13)));
+    s.aim=bb_steam_aim_defaults();s.aim.enabled=1;s.aim.pause_button=13;s.aim.flags=BB_AIM_TRIGGER_FIRE;
+    n=frame(p,0x830,0x20000|1);assert(send(&s,p,n,530,true,&input,&pointer)==1&&!pointer.buttons);
+    /* Hold still for 0.5 seconds and >=32 *fresh* gyro samples to zero drift. */
+    s.aim.pause_button=16;s.aim.flags=0;n=frame(p,0x810,0x8000);put16(p+5,100);put16(p+9,200);
+    for(unsigned i=0;i<40;i++)assert(send(&s,p,n,600+i*16,true,&input,&pointer)==1&&!pointer.x);
+    assert(s.bias_x==200&&s.bias_y==100);
+    n=frame(p,0x810,0);put16(p+5,100);put16(p+9,200);
+    assert(send(&s,p,n,1240,true,&input,&pointer)==1&&!pointer.x);
+    assert(send(&s,p,n,1256,true,&input,&pointer)==1&&!pointer.x&&!pointer.y);
+    /* Button deltas cannot calibrate stale gyro; motion restarts collection. */
+    s.bias_x=0;s.bias_y=0;n=frame(p,0x810,0x8000);put16(p+5,100);put16(p+9,200);
+    assert(send(&s,p,n,1272,true,&input,&pointer)==1);unsigned samples=s.zero_samples;
+    n=frame(p,0x10,0x8000);for(unsigned i=0;i<40;i++)send(&s,p,n,1280+i*16,true,&input,&pointer);
+    assert(s.zero_samples==samples&&!s.bias_x);
+    n=frame(p,0x810,0x8000);put16(p+5,500);put16(p+9,500);send(&s,p,n,2000,true,&input,&pointer);
+    assert(s.zero_samples==1&&!s.bias_x);
+    /* Bias subtraction at opposite sensor extremes must not overflow. */
+    s.aim.sensitivity=200;s.bias_x=-32768;s.bias_y=-32768;s.gyro_active=true;s.gyro_at=2000;
+    n=frame(p,0x810,0);put16(p+5,32767);put16(p+9,32767);
+    send(&s,p,n,2050,true,&input,&pointer);assert(pointer.x==3999&&pointer.y==-3999);
+    puts("Steam parity: optional right click, pause/fire suppression, fresh-sample zeroing and full-range gyro arithmetic passed");
     /* Bounded malformed-input sweep for lengths, segment numbering and flags. */
     uint32_t random=7;
     for(unsigned i=0;i<10000;i++) {

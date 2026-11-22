@@ -14,6 +14,12 @@ typedef struct {
     uint32_t fragment_at, pointer_at, reports, malformed, fragments;
     bb_steam_controls_t controls;
     bb_steam_aim_t aim;
+    bb_steam_features_t features;
+    uint32_t zero_at;
+    int32_t zero_x,zero_y;
+    int16_t bias_x,bias_y,first_x,first_y;
+    uint16_t zero_samples;
+    bool collecting;
     uint32_t gyro_at;
     int32_t gyro_remainder_x,gyro_remainder_y;
     bool gyro_active;

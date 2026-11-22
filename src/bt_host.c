@@ -359,14 +359,15 @@ bool bb_bt_host_diagnostics_slot(uint8_t slot, char* out, size_t size) {
 }
 
 bool bb_bt_host_steam_diagnostics(char* out,size_t size) {
-    if(!out||size<320)return false;
+    if(!out||!size)return false;
     const bb_host_context_t* c=&host_slots[bb_slot_current()];
     const bb_steam_ble_t* client=&c->steam_client;
-    snprintf(out,size,"{\"slot\":%u,\"steam_transport\":%s,\"stage\":\"%s\",\"status\":%u,\"failed_stage\":\"%s\",\"notifications\":%lu,\"reports\":%lu,\"malformed_reports\":%lu,\"input_handle\":%u,\"feature_handle\":%u}",
+    int written=snprintf(out,size,"{\"slot\":%u,\"steam_transport\":%s,\"stage\":\"%s\",\"status\":%u,\"failed_stage\":\"%s\",\"notifications\":%lu,\"reports\":%lu,\"malformed_reports\":%lu,\"input_handle\":%u,\"feature_handle\":%u,\"output_failed\":%s,\"output_status\":%u,\"output_writes\":%lu,\"output_errors\":%lu}",
         bb_slot_current(),c->le_custom_steam?"true":"false",bb_steam_ble_stage_name(client->stage),c->steam_failure,bb_steam_ble_stage_name(c->steam_failed_stage),
         (unsigned long)client->notifications,(unsigned long)c->steam_reports,(unsigned long)c->steam_bad_reports,
-        client->input.value_handle,client->feature.value_handle);
-    return true;
+        client->input.value_handle,client->feature.value_handle,client->output_failed?"true":"false",client->output_status,
+        (unsigned long)client->output_writes,(unsigned long)client->output_errors);
+    return written>=0&&(size_t)written<size;
 }
 
 #define classic_attempt_started (host_slots[bb_slot_current()].classic_attempt_started)
@@ -1019,8 +1020,17 @@ static bool send_xbox_ble_rumble(uint8_t strength) {
     return false;
 }
 
+static bool send_steam_rumble(uint8_t strength,bool stop) {
+    bb_steam_features_t f=bb_steam_features_get();
+    bb_ds4_motors_t motors=bb_ds4_rumble_motors(strength,rumble_motor_big,rumble_motor_small,stop||!f.haptics);
+    return bb_steam_ble_haptics(&host_slots[bb_slot_current()].steam_client,
+        (uint8_t)((unsigned)motors.big*f.haptic_gain/100u),
+        (uint8_t)((unsigned)motors.small*f.haptic_gain/100u));
+}
 static bool send_current_rumble(uint8_t strength,bool stop) {
     switch (current_identity.kind) {
+        case BB_CONTROLLER_STEAM:
+            return send_steam_rumble(strength,stop);
         case BB_CONTROLLER_XBOX_SERIES:
         case BB_CONTROLLER_XBOX_WIRELESS:
         case BB_CONTROLLER_XBOX_ONE:
@@ -1061,7 +1071,7 @@ static void service_rumble(void) {
         rumble_motor_small = rumble_request_small;
         rumble_request_pending = false;
         if (send_current_rumble(strength,false)) {
-            rumble_active = strength != 0 || (current_identity.kind==BB_CONTROLLER_DUALSHOCK4&&(rumble_motor_big||rumble_motor_small));
+            rumble_active = strength != 0 || ((current_identity.kind==BB_CONTROLLER_DUALSHOCK4||current_identity.kind==BB_CONTROLLER_STEAM)&&(rumble_motor_big||rumble_motor_small));
             rumble_active_strength = strength;
             rumble_stop_at = now + duration;
             rumble_refresh_at = now + 80u;
@@ -1072,7 +1082,7 @@ static void service_rumble(void) {
         }
     }
     if (rumble_active && (int32_t)(now - rumble_stop_at) < 0 && (int32_t)(now - rumble_refresh_at) >= 0) {
-        bool refresh = current_identity.kind == BB_CONTROLLER_SWITCH2_PRO || (current_identity.kind == BB_CONTROLLER_8BITDO && classic_switch_protocol);
+        bool refresh = current_identity.kind == BB_CONTROLLER_STEAM || current_identity.kind == BB_CONTROLLER_SWITCH2_PRO || (current_identity.kind == BB_CONTROLLER_8BITDO && classic_switch_protocol);
         if (refresh) send_current_rumble(rumble_active_strength,false);
         rumble_refresh_at = now + 80u;
     }
@@ -2551,7 +2561,18 @@ static void service_slot(void) {
     }
     uint32_t now = btstack_run_loop_get_time_ms();
     service_link_recovery(now);
-    if(le_custom_steam && le_handle!=HCI_CON_HANDLE_INVALID)bb_steam_ble_poll(&host_slots[bb_slot_current()].steam_client,now);
+    if(le_custom_steam && le_handle!=HCI_CON_HANDLE_INVALID) {
+        bb_steam_ble_t* steam=&host_slots[bb_slot_current()].steam_client;
+        if(steam->stage==BB_STEAM_READY) {
+            bb_steam_features_t f=bb_steam_features_get();
+            bb_steam_ble_led(steam,f.led_brightness);
+            if(!f.haptics)bb_steam_ble_haptics(steam,0,0);
+            bb_runtime_state_t state;bb_state_get(&state);
+            bool supported=f.haptics&&!steam->output_failed;
+            if(state.rumble_supported!=supported)bb_state_set_rumble_supported(supported);
+        }
+        bb_steam_ble_poll(steam,now);
+    }
     service_classic_setup(now);
     service_dualsense_activation(now);
     if (multi_disconnect_requests[bb_slot_current()]) {
@@ -2934,7 +2955,8 @@ static bool disconnect_current_impl(void) {
 }
 
 bool bb_bt_host_rumble_test(uint8_t strength, uint16_t duration_ms) {
-    if (!classic_hid_cid && !xbox_ble_connected() && !eightbitdo64_ble_connected()) return false;
+    if (!classic_hid_cid && !xbox_ble_connected() && !eightbitdo64_ble_connected() &&
+        !(le_custom_steam&&host_slots[bb_slot_current()].steam_client.stage==BB_STEAM_READY)) return false;
     bb_runtime_state_t state;
     bb_state_get(&state);
     if (!state.rumble_supported) return false;

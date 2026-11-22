@@ -50,6 +50,7 @@ static void finish(uint16_t h){
     complete(h,0);
 }
 int main(void){
+    now=1000000; /* Connecting after long adapter uptime must not expire the initial LED write. */
     bb_steam_ble_t a={0},b={0};test_a=&a;test_b=&b;
     bb_steam_ble_start(&a,0,0x40,now,false,callback);assert(a.stage==BB_STEAM_SERVICE&&a.waiting);
     discover(0x40);assert(a.stage==BB_STEAM_NOTIFY&&!ready[0]);finish(0x40);assert(ready[0]==1&&a.stage==BB_STEAM_READY);
@@ -57,7 +58,31 @@ int main(void){
     handler[0](HCI_EVENT_PACKET,0,p,sizeof(p));assert(inputs[0]==1);
     p[10]=20;handler[0](HCI_EVENT_PACKET,0,p,sizeof(p));assert(inputs[0]==1); /* Truncated notification. */
     bb_steam_ble_start(&b,1,0x41,now,true,callback);discover(0x41);finish(0x41);assert(ready[1]==1&&command[4]==0x10&&a.configure[4]==0);
-    bb_steam_ble_stop(&a);p[10]=19;handler[0](HCI_EVENT_PACKET,0,p,sizeof(p));assert(inputs[0]==1&&b.stage==BB_STEAM_READY);
+    /* Optional runtime commands are serialized, bounded and isolated per pad. */
+    assert(bb_steam_ble_led(&a,35));bb_steam_ble_poll(&a,now);
+    assert(a.waiting&&command_len==6&&command[1]==0x87&&command[3]==45&&command[4]==35);
+    uint8_t inflight[11];memcpy(inflight,a.output,11);
+    assert(bb_steam_ble_haptics(&a,255,90));assert(bb_steam_ble_led(&a,70));
+    assert(!memcmp(inflight,a.output,11));complete(0x40,0);assert(a.sent[2]==35);
+    bb_steam_ble_poll(&a,now);assert(command_len==11&&command[1]==0x8f&&command[3]==1&&command[4]==244&&command[5]==1&&command[8]==25);
+    /* New stop while the old start is in flight survives completion. */
+    assert(bb_steam_ble_haptics(&a,0,0));memcpy(inflight,a.output,11);bb_steam_ble_poll(&a,now);
+    assert(!memcmp(inflight,a.output,11));complete(0x40,0);bb_steam_ble_poll(&a,now);
+    assert(command[1]==0x8f&&command[3]==1&&!command[4]&&!command[8]);complete(0x40,0);
+    bb_steam_ble_poll(&a,now);assert(command[3]==0&&!command[8]);complete(0x40,0);
+    bb_steam_ble_poll(&a,now);assert(command[1]==0x87&&command[4]==70);complete(0x40,0);
+    assert(a.sent[2]==70&&!a.pending);
+    /* Busy retry is paced. ATT errors disable feedback while input stays live. */
+    assert(bb_steam_ble_haptics(&a,10,20));next_status=GATT_CLIENT_IN_WRONG_STATE;
+    bb_steam_ble_poll(&a,now);unsigned output_before=operations;bb_steam_ble_poll(&a,now+1);assert(operations==output_before);
+    now+=10;bb_steam_ble_poll(&a,now);assert(a.waiting);complete(0x40,5);
+    assert(a.stage==BB_STEAM_READY&&a.output_failed&&!failed[0]&&b.stage==BB_STEAM_READY&&!b.output_failed);
+    p[10]=19;handler[0](HCI_EVENT_PACKET,0,p,sizeof(p));assert(inputs[0]==2);
+    assert(!bb_steam_ble_haptics(&a,10,10));
+    bb_steam_ble_poll(&b,now);memcpy(inflight,b.output,11);now+=3000;bb_steam_ble_poll(&b,now);
+    assert(b.output_failed&&b.waiting&&b.stage==BB_STEAM_READY&&!memcmp(inflight,b.output,11));
+    complete(0x41,0);assert(!b.waiting&&b.output_failed);
+    bb_steam_ble_stop(&a);p[10]=19;handler[0](HCI_EVENT_PACKET,0,p,sizeof(p));assert(inputs[0]==2&&b.stage==BB_STEAM_READY);
     bb_steam_ble_stop(&b);assert(stopped==2);
     /* No service and a GATT rejection must fail rather than claim ready. */
     bb_steam_ble_start(&a,0,0x40,now,false,callback);complete(0x40,0);assert(failed[0]==1&&a.failed_stage==BB_STEAM_SERVICE);
