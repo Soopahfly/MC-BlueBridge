@@ -13,6 +13,8 @@ typedef struct {
     uint8_t payload[144], next_segment;
     uint32_t fragment_at, pointer_at, reports, malformed, fragments;
     bb_steam_controls_t controls;
+    uint16_t battery_mv;
+    uint32_t battery_at,battery_reports;
     bb_steam_aim_t aim;
     bb_steam_features_t features;
     uint32_t zero_at;
@@ -26,7 +28,7 @@ typedef struct {
     bool pointer_down;
     int16_t pointer_x,pointer_y,remainder_x,remainder_y;
 } bb_steam_controller_t;
-/* Original 2015 controller BLE only. Returns 1 for a complete input update,
+/* Original 2015 controller BLE only. Returns 1 for a complete input update, 2 for battery status,
  * 0 for an incomplete/irrelevant report, -1 for a malformed sequence/report.
  * Accepts 20-byte report-ID-prefixed or 19-byte raw GATT notifications. */
 int bb_steam_controller_decode(bb_steam_controller_t* s,const uint8_t* data,uint16_t length,

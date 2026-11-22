@@ -15,6 +15,7 @@ p=importlib.util.module_from_spec(spec);spec.loader.exec_module(p)
 source=Path(sys.argv[1]).read_text(encoding='utf-8')
 patched=p.patch(source);tree=ast.parse(p.daemon(patched))
 assert p.patch(p.daemon(source))==p.daemon(patched)
+assert p.patch(p.patch_base(source))==patched  # Upgrade the earlier Steam-only installer, too.
 try:p.patch(patched)
 except ValueError:pass
 else:raise AssertionError('repeat installation must fail before writing')
@@ -74,4 +75,42 @@ for id in ('steamPanel','steamTab','steamRightClick','steamHaptics','steamGyro',
 out=root/'build-host';out.mkdir(exist_ok=True)
 (out/'steam-ui.js').write_text(p.JS,encoding='utf-8')
 (out/'steam-full.js').write_text('\n'.join(re.findall(r'<script[^>]*>(.*?)</script>',html,re.S)),encoding='utf-8')
+battery_helper=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='save_steam_battery_settings')
+exec(compile(ast.Module(body=[battery_helper],type_ignores=[]),'<battery-settings>','exec'),ns)
+class BatteryAdapter(Adapter):
+    def request_json(self,cmd,*args):
+        if cmd=='HELLO':return {'capabilities':{'steam_battery':self.supported}}
+        if cmd in ('STEAM_BATTERY_GET','STEAM_BATTERY_STATUS'):
+            self.calls.append((cmd,args))
+            if self.fail:raise ValueError('battery read failed')
+            return dict(led=False,haptics=False,strength=35,threshold_mv=2200) if cmd.endswith('_GET') else dict(valid=False)
+        return super().request_json(cmd,*args)
+battery=dict(led=True,haptics=True,strength=35,threshold_mv=2150)
+a=BatteryAdapter();ns['save_steam_battery_settings'](a,battery)
+assert ('STEAM_BATTERY_SET',1,1,35,2150) in a.calls
+for payload in [None,[],{},dict(battery,led=1),dict(battery,haptics='yes'),dict(battery,strength=0),
+    dict(battery,strength=101),dict(battery,threshold_mv=True),dict(battery,threshold_mv=1799),dict(battery,threshold_mv=3001)]:
+    a=BatteryAdapter()
+    try:ns['save_steam_battery_settings'](a,payload)
+    except ValueError:pass
+    else:raise AssertionError(payload)
+    assert not any('SET' in c[0] for c in a.calls)
+for supported in (True,False):
+    result=ns['status'](BatteryAdapter(supported));assert ('steam_battery' in result)==supported
+result=ns['status'](BatteryAdapter(fail=True));assert result['detected'] and 'steam_battery_error' in result and 'steam_battery_status_error' in result
+for route in ('steam-battery','steam-battery/test'):
+    for method,supported,data,expected in [('GET',True,{},'405 Method Not Allowed'),('POST',False,battery,'400 Bad Request'),('POST',True,battery,'200 OK')]:
+        a=BatteryAdapter(supported);selected=[];replies=[]
+        env=dict(ns,json=json,urllib=urllib,
+            bluebridge_registry=SimpleNamespace(resolve=lambda id:selected.append(id) or a),
+            _read_http_request=lambda sock:(method,'/api/bluebridge/'+route,{'x-bluebridge-adapter':'chosen'},json.dumps(data).encode()),
+            _json_http=lambda sock,data,status='200 OK':replies.append((status,data)),response=lambda *args,**kw:kw)
+        exec(compile(ast.Module(body=[handler],type_ignores=[]),'<battery-route>','exec'),env)
+        env['handle_client'](SimpleNamespace(close=lambda:None),'test','/remote/v1')
+        assert selected==['chosen'] and replies[0][0]==expected
+        command='STEAM_BATTERY_TEST' if route.endswith('/test') else 'STEAM_BATTERY_SET'
+        assert any(c[0]==command for c in a.calls)==(expected=='200 OK')
+(out/'steam-battery-ui.js').write_text(p.JS+p.BATTERY_JS,encoding='utf-8')
+assert html.count('id="steamBatteryTest"')==1
+print('Steam battery GUI: fresh install/upgrade, strict settings, optional reads, selected-adapter saves and test routing passed')
 print('Steam GUI: patch/source parity, AST, strict validation, optional reads, selected adapter, methods and real HTTP saves passed')

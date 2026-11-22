@@ -72,6 +72,22 @@ int main(void){
     bb_steam_ble_poll(&a,now);assert(command[3]==0&&!command[8]);complete(0x40,0);
     bb_steam_ble_poll(&a,now);assert(command[1]==0x87&&command[4]==70);complete(0x40,0);
     assert(a.sent[2]==70&&!a.pending);
+    /* Battery overlay holds priority while game output changes underneath it. */
+    assert(bb_steam_ble_haptics(&a,200,100));
+    assert(bb_steam_ble_alert(&a,true,89,0,true));
+    assert(a.desired[0]==89&&!a.desired[1]);
+    assert(bb_steam_ble_haptics(&a,20,30));assert(a.desired[0]==89&&!a.desired[1]);
+    assert(a.game_left==20&&a.game_right==30);
+    for(unsigned i=0;i<8&&(a.pending||a.waiting);i++){if(a.waiting)complete(0x40,0);else bb_steam_ble_poll(&a,now);}
+    assert(!a.pending&&!a.waiting&&a.sent[0]==89&&!a.sent[1]);
+    assert(bb_steam_ble_alert(&a,false,0,0,false));assert(a.desired[0]==20&&a.desired[1]==30);
+    for(unsigned i=0;i<8&&(a.pending||a.waiting);i++){if(a.waiting)complete(0x40,0);else bb_steam_ble_poll(&a,now);}
+    assert(a.sent[0]==20&&a.sent[1]==30);
+    assert(bb_steam_ble_alert(&a,true,89,89,true));
+    assert(bb_steam_ble_haptics(&a,0,0));assert(a.desired[0]==89&&a.desired[1]==89);
+    assert(bb_steam_ble_alert(&a,false,0,0,false));assert(!a.desired[0]&&!a.desired[1]);
+    for(unsigned i=0;i<8&&(a.pending||a.waiting);i++){if(a.waiting)complete(0x40,0);else bb_steam_ble_poll(&a,now);}
+    assert(!a.sent[0]&&!a.sent[1]&&!b.alert_active);
     /* Busy retry is paced. ATT errors disable feedback while input stays live. */
     assert(bb_steam_ble_haptics(&a,10,20));next_status=GATT_CLIENT_IN_WRONG_STATE;
     bb_steam_ble_poll(&a,now);unsigned output_before=operations;bb_steam_ble_poll(&a,now+1);assert(operations==output_before);

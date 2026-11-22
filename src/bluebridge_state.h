@@ -3,12 +3,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "steam_aim.h"
+#include "steam_battery.h"
 #include "lightbar.h"
 
-#define BLUEBRIDGE_VERSION "1.3.0-oled"
-#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=22"
+#define BLUEBRIDGE_VERSION "1.3.1-oled"
+#define BLUEBRIDGE_FIRMWARE_MANIFEST "MCBLUEBRIDGE|" BLUEBRIDGE_VERSION "|PICO2W|SCHEMA=23"
 #define BLUEBRIDGE_PROTOCOL_VERSION 2
-#define BB_CONFIG_SCHEMA 22
+#define BB_CONFIG_SCHEMA 23
 #define BB_MAX_NAME 32
 #define BB_MAX_PROFILE_NAME 24
 #define BB_MAX_CONTROLLERS 8
@@ -140,8 +141,12 @@ typedef struct __attribute__((packed)) {
     bb_lightbar_config_t lightbar;
     uint8_t ds4_right_click;
     bb_steam_features_t steam_features;
+    bb_steam_battery_config_t steam_battery;
 } bb_config_t;
 
+#define BB_CONFIG_V22_SIZE offsetof(bb_config_t, steam_battery)
+bb_steam_battery_config_t bb_steam_battery_get(void);
+bool bb_steam_battery_set(bb_steam_battery_config_t settings);
 #define BB_CONFIG_V21_SIZE offsetof(bb_config_t, steam_features)
 bb_steam_features_t bb_steam_features_get(void);
 bool bb_steam_features_set(bb_steam_features_t settings);

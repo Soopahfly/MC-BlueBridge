@@ -96,6 +96,7 @@ static void migrate_v7(const legacy_config_v7_t* old, bb_config_t* cfg) {
     memset(cfg, 0, sizeof(*cfg));
     cfg->schema = BB_CONFIG_SCHEMA;
     cfg->steam_features=bb_steam_features_defaults();
+    cfg->steam_battery=bb_steam_battery_defaults();
     cfg->panel_input=BB_PANEL_ENCODER;
     cfg->oled_enabled=1;
     cfg->output_mode = old->output_mode;
@@ -163,6 +164,11 @@ bool bb_config_load(bb_config_t* cfg) {
         if (header->checksum != checksum_bytes(stored, sizeof(*stored))) return false;
         *cfg = *stored;
         return true;
+    }
+    if(header->size==BB_CONFIG_V22_SIZE){
+        uint32_t schema;memcpy(&schema,payload,sizeof(schema));
+        if(schema!=22||header->checksum!=checksum_bytes(payload,header->size))return false;
+        memset(cfg,0,sizeof(*cfg));memcpy(cfg,payload,header->size);return true;
     }
     if(header->size==BB_CONFIG_V21_SIZE){
         uint32_t schema;memcpy(&schema,payload,sizeof(schema));

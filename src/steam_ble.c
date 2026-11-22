@@ -48,9 +48,24 @@ static void queue_output(bb_steam_ble_t* c,unsigned kind,uint8_t value) {
 }
 bool bb_steam_ble_haptics(bb_steam_ble_t* c,uint8_t left,uint8_t right) {
     if(c->stage!=BB_STEAM_READY||c->output_failed)return false;
+    c->game_left=left;c->game_right=right;
+    if(c->alert_active)return true; /* Keep the latest game effect for restoration. */
     /* Repeated nonzero requests renew a finite pulse train; zero is deduplicated. */
     if(left||c->desired[0]||c->sent[0])queue_output(c,0,left);
     if(right||c->desired[1]||c->sent[1])queue_output(c,1,right);
+    return true;
+}
+bool bb_steam_ble_alert(bb_steam_ble_t* c,bool active,uint8_t left,uint8_t right,bool refresh) {
+    if(c->stage!=BB_STEAM_READY||c->output_failed)return false;
+    bool changed=c->alert_active!=active;c->alert_active=active;
+    if(!active) {
+        if(changed) {
+            queue_output(c,0,c->game_left);queue_output(c,1,c->game_right);
+        }
+        return true;
+    }
+    if(changed || c->desired[0]!=left || (refresh&&left))queue_output(c,0,left);
+    if(changed || c->desired[1]!=right || (refresh&&right))queue_output(c,1,right);
     return true;
 }
 bool bb_steam_ble_led(bb_steam_ble_t* c,uint8_t brightness) {

@@ -166,7 +166,7 @@ def once(text,old,new):
     if text.count(old)!=1:raise ValueError('Unsupported Companion Remote source: '+old[:60])
     return text.replace(old,new,1)
 
-def patch(text):
+def patch_base(text):
     if MARKER in text:raise ValueError('Steam Controller settings are already installed')
     match=re.search(r"BLUEBRIDGE_HTML = r'''(.*?)'''\.encode\(\"utf-8\"\)",text,re.S)
     if not match:raise ValueError('Cannot locate the BlueBridge web page')
@@ -184,6 +184,124 @@ def patch(text):
     text=once(text,anchor,ROUTE+anchor)
     ast.parse(daemon(text))
     return text
+
+BATTERY_MARKER='BLUEBRIDGE_STEAM_BATTERY_V1'
+BATTERY_PANEL='''<div id="steamBatterySection" class="hidden">
+<h3>Battery warning (experimental)</h3>
+<p id="steamBatteryReading" class="subtle" role="status"></p>
+<fieldset id="steamBatteryFields">
+<label><input id="steamBatteryLED" type="checkbox"> Double-blink the white LED when battery is low</label>
+<label><input id="steamBatteryHaptics" type="checkbox"> Play a haptic battery warning</label>
+<div class="field-grid"><label>Warning strength (%)<input id="steamBatteryStrength" type="number" min="1" max="100" step="1"></label>
+<label>Warn below (V, both AA batteries)<input id="steamBatteryVoltage" type="number" min="1.8" max="3" step="0.05"></label></div>
+<p class="subtle">Left tap, right tap, then a longer pulse on both pads. Warns once, then at most every five minutes while low. Independent of game rumble. LED double-blinks every five seconds, including when normal brightness is off.</p>
+<p class="subtle">These warnings default off. The initial 2.20 V threshold is experimental: check it against your AA batteries. Voltage is shown without estimating a percentage. Missing or stale readings suppress automatic warnings.</p>
+</fieldset>
+<button id="steamBatterySave" class="btn" onclick="saveSteamBattery()">Save battery warnings</button>
+<button id="steamBatteryTest" class="btn" onclick="testSteamBattery()">Test LED and haptic warning</button>
+<p id="steamBatteryStatus" class="subtle" role="status"></p>
+</div>'''
+BATTERY_JS='''
+// BLUEBRIDGE_STEAM_BATTERY_V1
+let steamBatteryDirty=false,steamBatterySaving=false,steamBatteryTesting=false,steamBatterySelection='';
+function renderSteamBattery(){
+  const c=selectedSteam(),key=c?JSON.stringify([selectedAdapterId,c.index,c.id]):'';
+  if(key!==steamBatterySelection){steamBatterySelection=key;steamBatteryDirty=false;}
+  const supported=!!c&&!!statusData.capabilities?.steam_battery;
+  $('steamBatterySection').classList.toggle('hidden',!supported);
+  const settings=statusData.steam_battery,b=statusData.steam_battery_status;
+  const connected=!!c?.connected&&Number(c.index)===Number(b?.controller_index);
+  $('steamBatteryFields').disabled=!supported||!settings||steamBatterySaving||steamBatteryTesting;
+  $('steamBatterySave').disabled=$('steamBatteryFields').disabled;
+  $('steamBatteryTest').disabled=!supported||!connected||!b?.test_available||steamBatterySaving||steamBatteryTesting;
+  if(!supported)return;
+  if(settings&&!steamBatteryDirty&&!steamBatterySaving){
+    $('steamBatteryLED').checked=!!settings.led;$('steamBatteryHaptics').checked=!!settings.haptics;
+    $('steamBatteryStrength').value=String(settings.strength);$('steamBatteryVoltage').value=(settings.threshold_mv/1000).toFixed(2);
+  }
+  $('steamBatteryReading').textContent=connected&&b?.valid?'Battery: '+(b.millivolts/1000).toFixed(2)+' V'+(b.low?' - low':''):
+    connected?'Battery voltage unavailable or stale. Automatic warnings are suppressed.':'Connect this Steam Controller to read battery voltage or test the warning.';
+  $('steamBatteryStatus').textContent=!settings?'Unable to read warning settings. Refresh to retry.':'Warnings save without restarting. Test plays both outputs without changing your saved choices.';
+}
+async function saveSteamBattery(){
+  if(steamBatterySaving||steamBatteryTesting||!selectedSteam()||!statusData.steam_battery)return;
+  const adapter=selectedAdapterId;
+  try{
+    const voltage=Number($('steamBatteryVoltage').value),mv=Math.round(voltage*1000);
+    if(!Number.isFinite(voltage)||mv<1800||mv>3000||Math.abs(voltage*1000-mv)>0.00001)throw Error('Choose a voltage from 1.80 to 3.00 V.');
+    const payload={led:$('steamBatteryLED').checked,haptics:$('steamBatteryHaptics').checked,
+      strength:steamInteger('steamBatteryStrength',1,100),threshold_mv:mv};
+    steamBatterySaving=true;renderSteamBattery();
+    const r=await post('/api/bluebridge/steam-battery',payload);if(selectedAdapterId!==adapter)return;
+    statusData.steam_battery=r.settings;steamBatteryDirty=false;toast('Steam battery warnings saved.');
+  }catch(e){toast(e.message,true);}finally{steamBatterySaving=false;renderSteamBattery();}
+}
+async function testSteamBattery(){
+  if(steamBatterySaving||steamBatteryTesting||$('steamBatteryTest').disabled)return;
+  steamBatteryTesting=true;renderSteamBattery();
+  try{await post('/api/bluebridge/steam-battery/test',{});toast('Battery warning test queued. Uses saved warning strength.');}
+  catch(e){toast(e.message,true);}finally{steamBatteryTesting=false;renderSteamBattery();}
+}
+for(const event of ['input','change'])$('steamBatteryFields').addEventListener(event,()=>steamBatteryDirty=true);
+saveSteamBattery=guardAdapterAction(saveSteamBattery);
+testSteamBattery=guardAdapterAction(testSteamBattery);
+'''
+BATTERY_STATUS='''            if status["capabilities"].get("steam_battery"):
+                for key,command in [("steam_battery","STEAM_BATTERY_GET"),("steam_battery_status","STEAM_BATTERY_STATUS")]:
+                    try:
+                        status[key]=self.request_json(command)
+                    except Exception as battery_error:
+                        status[key+"_error"]=str(battery_error)
+'''
+BATTERY_HELPER='''# BLUEBRIDGE_STEAM_BATTERY_V1
+def save_steam_battery_settings(bluebridge,payload):
+    if not isinstance(payload,dict):raise ValueError("Invalid battery warning settings")
+    if not bluebridge.request_json("HELLO").get("capabilities",{}).get("steam_battery"):
+        raise ValueError("This firmware does not support Steam battery warnings")
+    for name in ["led","haptics"]:
+        if type(payload.get(name)) is not bool:raise ValueError(name+" must be a boolean")
+    for name,low,high in [("strength",1,100),("threshold_mv",1800,3000)]:
+        value=payload.get(name)
+        if type(value) is not int or not low<=value<=high:raise ValueError("Invalid "+name)
+    bluebridge.request("STEAM_BATTERY_SET",int(payload["led"]),int(payload["haptics"]),payload["strength"],payload["threshold_mv"])
+    return bluebridge.request_json("STEAM_BATTERY_GET")
+
+'''
+BATTERY_ROUTE='''                if request_path in ("/api/bluebridge/steam-battery","/api/bluebridge/steam-battery/test"):
+                    if method != "POST":
+                        _json_http(sock,response(False,"error","POST required"),"405 Method Not Allowed")
+                        return
+                    try:
+                        if request_path.endswith("/test"):
+                            if not bluebridge.request_json("HELLO").get("capabilities",{}).get("steam_battery"):
+                                raise ValueError("This firmware does not support Steam battery warnings")
+                            bluebridge.request("STEAM_BATTERY_TEST")
+                            _json_http(sock,response(True,"bluebridge","Warning test queued"))
+                        else:
+                            payload=json.loads(request_body.decode("utf-8") or "{}")
+                            settings=save_steam_battery_settings(bluebridge,payload)
+                            _json_http(sock,response(True,"bluebridge","Battery warnings saved",settings=settings))
+                    except Exception as battery_error:
+                        _json_http(sock,response(False,"error",str(battery_error)),"400 Bad Request")
+                    return
+'''
+
+def patch(text):
+    if BATTERY_MARKER in text:raise ValueError('Steam battery warnings are already installed')
+    if MARKER not in text:text=patch_base(text)
+    anchor='<p id="steamFeedbackStatus" class="subtle" role="status"></p>'
+    text=once(text,anchor,anchor+BATTERY_PANEL)
+    text=once(text,'function renderAll(){','function renderAll(){renderSteamBattery();')
+    match=re.search(r"BLUEBRIDGE_HTML = r'''(.*?)'''\.encode",text,re.S)
+    if not match:raise ValueError('Cannot locate BlueBridge web page')
+    html=match[1];html=once(html,'</script>',BATTERY_JS+'</script>')
+    text=text[:match.start(1)]+html+text[match.end(1):]
+    anchor='            status["capabilities"] = hello.get("capabilities", {})\n'
+    text=once(text,anchor,anchor+BATTERY_STATUS)
+    text=once(text,'def handle_client(sock, address, path):',BATTERY_HELPER+'def handle_client(sock, address, path):')
+    anchor='                if request_path == "/api/bluebridge/touch-mouse":\n'
+    text=once(text,anchor,BATTERY_ROUTE+anchor)
+    ast.parse(daemon(text));return text
 
 def replace_file(path,data):
     temporary=path.with_name(path.name+'.steam.tmp')
@@ -213,7 +331,7 @@ def restore(stamp):
     if not re.fullmatch(r'\d{8}-\d{6}',stamp):raise ValueError('Invalid backup timestamp')
     prepared=[]
     for path in TARGETS:
-        if MARKER not in path.read_text(encoding='utf-8'):raise ValueError('Target changed; refusing to overwrite '+str(path))
+        if BATTERY_MARKER not in path.read_text(encoding='utf-8'):raise ValueError('Target changed; refusing to overwrite '+str(path))
         raw=path.with_name(path.name+'.before-steam-'+stamp).read_bytes()
         ast.parse(daemon(raw.decode('utf-8').replace('\r\n','\n')));prepared.append((path,raw))
     for path,raw in prepared:replace_file(path,raw);print('Restored:',path)

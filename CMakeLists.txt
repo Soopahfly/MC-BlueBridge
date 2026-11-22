@@ -127,6 +127,7 @@ add_executable(mc_bluebridge
   src/xsm3_excrypt_sha.c
   src/steam_ble.c
   src/steam_controller.c
+  src/steam_battery.c
   src/touch_mouse.c
   src/ds4_gyro.c
   src/lightbar.c

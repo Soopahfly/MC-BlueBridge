@@ -126,6 +126,8 @@ typedef struct {
     bool le_custom_nintendo;
     bool le_custom_steam;
     bb_steam_ble_t steam_client;
+    bb_steam_battery_t steam_battery;
+    volatile bool steam_battery_test_requested;
     uint32_t steam_reports,steam_bad_reports;
     bb_steam_stage_t steam_failed_stage;
     uint8_t steam_failure;
@@ -358,6 +360,23 @@ bool bb_bt_host_diagnostics_slot(uint8_t slot, char* out, size_t size) {
     return written >= 0 && (size_t)written < size;
 }
 
+bool bb_bt_host_steam_battery_test(void) {
+    bb_host_context_t* c=&host_slots[bb_slot_current()];
+    if(!c->le_custom_steam||c->steam_client.stage!=BB_STEAM_READY||c->steam_client.output_failed)return false;
+    c->steam_battery_test_requested=true;return true;
+}
+bool bb_bt_host_steam_battery_diagnostics(char* out,size_t size) {
+    if(!out||!size)return false;
+    const bb_host_context_t* c=&host_slots[bb_slot_current()];
+    const bb_steam_battery_t* b=&c->steam_battery;
+    uint32_t age=btstack_run_loop_get_time_ms()-b->sample_at;
+    bool valid=c->le_custom_steam&&c->steam_client.stage==BB_STEAM_READY&&b->have_voltage&&age<30000u;
+    int n=snprintf(out,size,"{\"valid\":%s,\"millivolts\":%u,\"low\":%s,\"age_ms\":%lu,\"reports\":%lu,\"controller_index\":%d,\"test_available\":%s}",
+        valid?"true":"false",b->millivolts,(valid&&b->low)?"true":"false",(unsigned long)(b->have_voltage?age:0),
+        (unsigned long)b->reports,c->current_controller_index,
+        (c->le_custom_steam&&c->steam_client.stage==BB_STEAM_READY&&!c->steam_client.output_failed)?"true":"false");
+    return n>=0&&(size_t)n<size;
+}
 bool bb_bt_host_steam_diagnostics(char* out,size_t size) {
     if(!out||!size)return false;
     const bb_host_context_t* c=&host_slots[bb_slot_current()];
@@ -1838,6 +1857,11 @@ static void steam_client_event(bb_steam_ble_t* client,bb_steam_event_t event,uin
         if(current_controller_index<0){bb_slot_enter(previous);return;}
         int result=bb_driver_handle_steam_ble_report(data,length);
         if(result==1){++host_slots[client->slot].steam_reports;last_controller_report_at=btstack_run_loop_get_time_ms();}
+        else if(result==2) {
+            bb_steam_battery_sample(&host_slots[client->slot].steam_battery,bb_driver_steam_battery_mv(),
+                btstack_run_loop_get_time_ms(),bb_steam_battery_get());
+            last_controller_report_at=btstack_run_loop_get_time_ms();
+        }
         else if(result<0)++host_slots[client->slot].steam_bad_reports;
     } else {
         host_slots[client->slot].steam_failed_stage=client->failed_stage;
@@ -1848,6 +1872,8 @@ static void steam_client_event(bb_steam_ble_t* client,bb_steam_event_t event,uin
 }
 static void start_steam_client(void) {
     ble_setup_started=true;ble_stage="steam_setup";
+    memset(&host_slots[bb_slot_current()].steam_battery,0,sizeof(bb_steam_battery_t));
+    host_slots[bb_slot_current()].steam_battery_test_requested=false;
     bb_steam_ble_start(&host_slots[bb_slot_current()].steam_client,bb_slot_current(),le_handle,
         btstack_run_loop_get_time_ms(),bb_touch_mouse_current()&&!bb_multi_mode()&&bb_output_mode()==BB_OUTPUT_MISTER&&bb_steam_aim_current().enabled,steam_client_event);
 }
@@ -2565,7 +2591,12 @@ static void service_slot(void) {
         bb_steam_ble_t* steam=&host_slots[bb_slot_current()].steam_client;
         if(steam->stage==BB_STEAM_READY) {
             bb_steam_features_t f=bb_steam_features_get();
-            bb_steam_ble_led(steam,f.led_brightness);
+            bb_host_context_t* slot=&host_slots[bb_slot_current()];
+            bool test=slot->steam_battery_test_requested;slot->steam_battery_test_requested=false;
+            bb_steam_battery_output_t warning=bb_steam_battery_tick(&slot->steam_battery,now,
+                bb_steam_battery_get(),f.led_brightness,test);
+            bb_steam_ble_alert(steam,warning.alert_active,warning.left,warning.right,warning.refresh);
+            bb_steam_ble_led(steam,warning.brightness);
             if(!f.haptics)bb_steam_ble_haptics(steam,0,0);
             bb_runtime_state_t state;bb_state_get(&state);
             bool supported=f.haptics&&!steam->output_failed;

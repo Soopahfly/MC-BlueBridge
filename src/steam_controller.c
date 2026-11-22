@@ -14,7 +14,16 @@ static int decode_payload(bb_steam_controller_t* s,unsigned size,uint32_t now,bo
     bb_input_state_t* input,bb_pointer_sample_t* pointer) {
     const uint8_t* p=s->payload;
     if(size<2)return invalid(s);
-    if((p[0]&15u)!=4u)return 0; /* Status and other non-input messages. */
+    if((p[0]&15u)==5u) {
+        /* Original BLE status signature, voltage at bytes 12/13 including the
+         * segment header (zydeco/SteamController's didReceiveStatus). This is
+         * voltage only: no unverified conversion to a battery percentage. */
+        if(size<13 || p[0]!=5 || p[1]!=0x55 || p[2]!=2)return invalid(s);
+        uint16_t mv=(uint16_t)(p[11]|((uint16_t)p[12]<<8));
+        if(mv<1000 || mv>4000)return invalid(s);
+        s->battery_mv=mv;s->battery_at=now;++s->battery_reports;return 2;
+    }
+    if((p[0]&15u)!=4u)return 0; /* Other non-input messages. */
     uint16_t flags=(uint16_t)((p[0]&0xf0u)|((uint16_t)p[1]<<8));
     if(flags&0xe000u)return invalid(s);
     static const uint8_t sizes[]={3,2,3,4,4,4,6,6,8};

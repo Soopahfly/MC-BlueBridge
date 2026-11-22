@@ -1811,6 +1811,7 @@ bool bb_driver_handle_xbox_ble_report(const uint8_t* report, uint16_t length) {
     return true;
 }
 
+uint16_t bb_driver_steam_battery_mv(void){return driver_slots[bb_slot_current()].steam.battery_mv;}
 int bb_driver_handle_steam_ble_report(const uint8_t* report,uint16_t length) {
     if(!report)return -1;
     record_input_report(report,length);

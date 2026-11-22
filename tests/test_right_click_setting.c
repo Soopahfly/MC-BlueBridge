@@ -28,7 +28,7 @@ int main(void){
     memcpy(test_flash+base,header,sizeof(header));
     memcpy(test_flash+base+sizeof(header),&before,BB_CONFIG_V20_SIZE);
     bb_state_init();bb_config_get(&after);
-    assert(after.schema==BB_CONFIG_SCHEMA&&BB_CONFIG_V20_SIZE==11110&&BB_CONFIG_V21_SIZE==11111&&sizeof(after)==11115);
+    assert(after.schema==BB_CONFIG_SCHEMA&&BB_CONFIG_V20_SIZE==11110&&BB_CONFIG_V21_SIZE==11111&&sizeof(after)==11120&&BB_CONFIG_V22_SIZE==11115);
     assert(!memcmp((uint8_t*)&before+4,(uint8_t*)&after+4,BB_CONFIG_V20_SIZE-4));
     assert(!bb_ds4_right_click_get()&&!bb_ds4_right_click_current());
     bb_ds4_right_click_set(true);assert(bb_ds4_right_click_get()&&bb_ds4_right_click_current());
@@ -55,5 +55,20 @@ int main(void){
     bb_config_get(&after);after.steam_features.led_brightness=101;
     assert(!bb_config_import(&after,bb_config_checksum(&after)));
     assert(bb_config_reset());f=bb_steam_features_get();assert(!f.haptics&&!f.right_click&&f.led_brightness==100);
+    /* Schema 22 preserves all Steam options and adds opt-in battery settings. */
+    bb_config_get(&before);before.schema=22;before.steam_features=(bb_steam_features_t){1,1,80,25};
+    header[1]=BB_CONFIG_V22_SIZE;header[2]=hash(&before,header[1]);
+    memcpy(test_flash+base,header,sizeof(header));memcpy(test_flash+base+sizeof(header),&before,header[1]);
+    bb_state_init();bb_config_get(&after);
+    assert(!memcmp((uint8_t*)&before+4,(uint8_t*)&after+4,BB_CONFIG_V22_SIZE-4));
+    bb_steam_battery_config_t b=bb_steam_battery_get();
+    assert(!b.led&&!b.haptics&&b.strength==35&&b.threshold_mv==2200);
+    assert(bb_steam_battery_set((bb_steam_battery_config_t){1,1,40,2100}));
+    assert(!bb_steam_battery_set((bb_steam_battery_config_t){1,1,0,2100}));
+    assert(!bb_steam_battery_set((bb_steam_battery_config_t){1,1,50,3001}));
+    test_time+=250;bb_config_flush_pending();bb_state_init();b=bb_steam_battery_get();
+    assert(b.led&&b.haptics&&b.strength==40&&b.threshold_mv==2100);
+    bb_config_get(&after);after.steam_battery.led=2;assert(!bb_config_import(&after,bb_config_checksum(&after)));
+    assert(bb_config_reset());b=bb_steam_battery_get();assert(!b.led&&!b.haptics&&b.threshold_mv==2200);
     puts("right-click setting: default off, schema-20 prefix preserved, live save, persistence, import validation and reset passed");
 }

@@ -18,6 +18,8 @@ bool bb_bt_host_diagnostics_slot(uint8_t slot, char* out, size_t size);
 
 void bb_bt_host_set_slot_rumble(uint8_t slot, uint8_t left, uint8_t right);
 
+bool bb_bt_host_steam_battery_test(void);
+bool bb_bt_host_steam_battery_diagnostics(char* out,size_t size);
 bool bb_bt_host_steam_diagnostics(char* out,size_t size);
 void bb_bt_host_set_slot_rumble_motors(uint8_t slot, uint8_t strength, uint8_t big, uint8_t small);
 void bb_bt_host_set_ds3_big_gain(uint16_t percent);

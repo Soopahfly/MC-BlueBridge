@@ -51,7 +51,7 @@ int main(void) {
     bad[1]=0x80;assert(bb_steam_controller_decode(&s,bad,20,62,true,&input,&pointer)==0);
     bad[1]=0xc1;assert(bb_steam_controller_decode(&s,bad,20,200,true,&input,&pointer)==-1); /* Fragment timeout. */
     n=frame(p,0x10,1);assert(send(&s,p,n,201,false,&input,&pointer)==1); /* Resynchronizes on segment zero. */
-    p[0]=5;assert(send(&s,p,n,202,false,&input,&pointer)==0); /* Non-input status. */
+    p[0]=6;assert(send(&s,p,n,202,false,&input,&pointer)==0); /* Non-input status. */
     assert(other.controls.stick_x==0&&other.controls.right_x==1000&&other.controls.buttons==0x100000u); /* Other controller was never overwritten. */
     /* Gyro-only updates integrate once, with bounded timing and no replay. */
     bb_steam_controller_t gyro={0};gyro.aim=bb_steam_aim_defaults();gyro.aim.enabled=1;
@@ -111,6 +111,21 @@ int main(void) {
     n=frame(p,0x810,0);put16(p+5,32767);put16(p+9,32767);
     send(&s,p,n,2050,true,&input,&pointer);assert(pointer.x==3999&&pointer.y==-3999);
     puts("Steam parity: optional right click, pause/fire suppression, fresh-sample zeroing and full-range gyro arithmetic passed");
+    /* Captured original BLE status: voltage, never a percentage or game input. */
+    const uint8_t status[19]={0xc0,5,0x55,2,0x3c,1,0,0,0,0,0,0,0x2f,9,0,0,0,0,0};
+    bb_steam_controls_t saved=s.controls;pointer=(bb_pointer_sample_t){.x=123,.buttons=3};
+    assert(bb_steam_controller_decode(&s,status,19,5000,false,&input,&pointer)==2);
+    assert(s.battery_mv==2351&&s.battery_at==5000&&s.battery_reports==1);
+    assert(!memcmp(&saved,&s.controls,sizeof(saved))&&pointer.x==123&&pointer.buttons==3);
+    uint8_t corrupt[19];memcpy(corrupt,status,19);corrupt[2]=0;
+    assert(bb_steam_controller_decode(&s,corrupt,19,5010,false,&input,&pointer)==-1&&s.battery_reports==1);
+    memcpy(corrupt,status,19);corrupt[12]=corrupt[13]=0;
+    assert(bb_steam_controller_decode(&s,corrupt,19,5020,false,&input,&pointer)==-1&&s.battery_mv==2351);
+    memcpy(corrupt,status,19);corrupt[12]=corrupt[13]=255;
+    assert(bb_steam_controller_decode(&s,corrupt,19,5030,false,&input,&pointer)==-1);
+    uint8_t with_id[20]={3};memcpy(with_id+1,status,19);
+    assert(bb_steam_controller_decode(&other,with_id,20,5040,true,&input,&pointer)==2&&other.battery_mv==2351);
+    puts("Steam battery decoder: captured voltage, signature/range rejection, report-ID and input/slot isolation passed");
     /* Bounded malformed-input sweep for lengths, segment numbering and flags. */
     uint32_t random=7;
     for(unsigned i=0;i<10000;i++) {
